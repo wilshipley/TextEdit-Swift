@@ -61,6 +61,8 @@
 #import "TextEditMisc.h"
 #import <objc/message.h> // objc_msgSend
 
+#import "TextEdit-Swift.h"
+
 #define oldEditPaddingCompensation 12.0
 
 NSString *SimpleTextType = @"com.apple.traditional-mac-plain-text";
@@ -71,6 +73,8 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 
 @implementation Document
+
+@synthesize openedIgnoringRichText = openedIgnoringRichText;
 
 //+ (BOOL)isRichTextType:(NSString *)typeName {
 //    /* We map all plain text documents to public.text.  Therefore a document is rich iff its type is not public.text. */
@@ -129,26 +133,26 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 
 /* Return an NSDictionary which maps Cocoa text system document identifiers (as declared in AppKit/NSAttributedString.h) to document types declared in TextEdit's Info.plist.
 */
-- (NSDictionary *)textDocumentTypeToTextEditDocumentTypeMappingTable {
-    static NSDictionary *documentMappings = nil;
-    // Use of dispatch_once() makes the initialization thread-safe, and it needs to be, since multiple documents can be opened concurrently
-    static dispatch_once_t once = 0; 
-    dispatch_once(&once, ^{
-	documentMappings = [[NSDictionary alloc] initWithObjectsAndKeys:
-            (NSString *)kUTTypeText, NSPlainTextDocumentType,
-            (NSString *)kUTTypeRTF, NSRTFTextDocumentType,
-            (NSString *)kUTTypeRTFD, NSRTFDTextDocumentType,
-            SimpleTextType, NSMacSimpleTextDocumentType,
-            (NSString *)kUTTypeHTML, NSHTMLTextDocumentType,
-	    Word97Type, NSDocFormatTextDocumentType,
-	    Word2007Type, NSOfficeOpenXMLTextDocumentType,
-	    Word2003XMLType, NSWordMLTextDocumentType,
-	    OpenDocumentTextType, NSOpenDocumentTextDocumentType,
-            (NSString *)kUTTypeWebArchive, NSWebArchiveTextDocumentType,
-	    nil];
-        });
-    return documentMappings;
-}
+//- (NSDictionary *)textDocumentTypeToTextEditDocumentTypeMappingTable {
+//    static NSDictionary *documentMappings = nil;
+//    // Use of dispatch_once() makes the initialization thread-safe, and it needs to be, since multiple documents can be opened concurrently
+//    static dispatch_once_t once = 0; 
+//    dispatch_once(&once, ^{
+//	documentMappings = [[NSDictionary alloc] initWithObjectsAndKeys:
+//            (NSString *)kUTTypeText, NSPlainTextDocumentType,
+//            (NSString *)kUTTypeRTF, NSRTFTextDocumentType,
+//            (NSString *)kUTTypeRTFD, NSRTFDTextDocumentType,
+//            SimpleTextType, NSMacSimpleTextDocumentType,
+//            (NSString *)kUTTypeHTML, NSHTMLTextDocumentType,
+//	    Word97Type, NSDocFormatTextDocumentType,
+//	    Word2007Type, NSOfficeOpenXMLTextDocumentType,
+//	    Word2003XMLType, NSWordMLTextDocumentType,
+//	    OpenDocumentTextType, NSOpenDocumentTextDocumentType,
+//            (NSString *)kUTTypeWebArchive, NSWebArchiveTextDocumentType,
+//	    nil];
+//        });
+//    return documentMappings;
+//}
 
 /* This method is called by the document controller. The message is passed on after information about the selected encoding (from our controller subclass) and preference regarding HTML and RTF formatting has been added. -lastSelectedEncodingForURL: returns the encoding specified in the Open panel, or the default encoding if the document was opened without an open panel.
 */
@@ -157,154 +161,154 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     return [self readFromURL:absoluteURL ofType:typeName encoding:[docController lastSelectedEncodingForURL:absoluteURL] ignoreRTF:[docController lastSelectedIgnoreRichForURL:absoluteURL] ignoreHTML:[docController lastSelectedIgnoreHTMLForURL:absoluteURL] error:outError];
 }
 
-- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError {
-    NSMutableDictionary *options = [NSMutableDictionary dictionaryWithCapacity:5];
-    NSDictionary *docAttrs;
-    id val, paperSizeVal, viewSizeVal;
-    NSTextStorage *text = [self textStorage];
-    
-    /* generalize the passed-in type to a type we support.  for instance, generalize "public.xml" to "public.txt" */
-    typeName = [[self class] readableTypeForType:typeName];
-    
-    [fileTypeToSet release];
-    fileTypeToSet = nil;
-    
-    [[self undoManager] disableUndoRegistration];
-    
-    [options setObject:absoluteURL forKey:NSBaseURLDocumentOption];
-    if (encoding != NoStringEncoding) {
-        [options setObject:[NSNumber numberWithUnsignedInteger:encoding] forKey:NSCharacterEncodingDocumentOption];
-    }
-    [self setEncoding:encoding];
-    
-    // Check type to see if we should load the document as plain. Note that this check isn't always conclusive, which is why we do another check below, after the document has been loaded (and correctly categorized).
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    if ((ignoreRTF && ([workspace type:typeName conformsToType:(NSString *)kUTTypeRTF] || [workspace type:typeName conformsToType:Word2003XMLType])) || (ignoreHTML && [workspace type:typeName conformsToType:(NSString *)kUTTypeHTML]) || [self isOpenedIgnoringRichText]) {
-        [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption]; // Force plain
-        typeName = (NSString *)kUTTypeText;
-        [self setOpenedIgnoringRichText:YES];
-    }
-    
-    [[text mutableString] setString:@""];
-    // Remove the layout managers while loading the text; mutableCopy retains the array so the layout managers aren't released
-    NSMutableArray *layoutMgrs = [[text layoutManagers] mutableCopy];
-    NSEnumerator *layoutMgrEnum = [layoutMgrs objectEnumerator];
-    NSLayoutManager *layoutMgr = nil;
-    while ((layoutMgr = [layoutMgrEnum nextObject])) [text removeLayoutManager:layoutMgr];
-    
-    // We can do this loop twice, if the document is loaded as rich text although the user requested plain
-    BOOL retry;
-    do {
-	BOOL success;
-	NSString *docType;
-	
-	retry = NO;
-
-	[text beginEditing];
-	success = [text readFromURL:absoluteURL options:options documentAttributes:&docAttrs error:outError];
-
-        if (!success) {
-	    [text endEditing];
-	    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
-	    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
-	    [layoutMgrs release];
-	    return NO;	// return NO on error; outError has already been set
-	}
-	
-	docType = [docAttrs objectForKey:NSDocumentTypeDocumentAttribute];
-
-	// First check to see if the document was rich and should have been loaded as plain
-	if (![[options objectForKey:NSDocumentTypeDocumentOption] isEqualToString:NSPlainTextDocumentType] && ((ignoreHTML && [docType isEqual:NSHTMLTextDocumentType]) || (ignoreRTF && ([docType isEqual:NSRTFTextDocumentType] || [docType isEqual:NSWordMLTextDocumentType])))) {
-	    [text endEditing];
-	    [[text mutableString] setString:@""];
-	    [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption];
-	    typeName = (NSString *)kUTTypeText;
-	    [self setOpenedIgnoringRichText:YES];
-	    retry = YES;
-	} else {
-	    NSString *newFileType = [[self textDocumentTypeToTextEditDocumentTypeMappingTable] objectForKey:docType];
-	    if (newFileType) {
-            typeName = newFileType;
-	    } else {
-            typeName = (NSString *)kUTTypeRTF; // Hmm, a new type in the Cocoa text system. Treat it as rich. ??? Should set the converted flag too?
-	    }
-        if (![[self class] isRichTextType:typeName]) [self applyDefaultTextAttributes:NO];
-	    [text endEditing];
-	}
-    } while(retry);
-    
-    [self setFileType:typeName];
-    // If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
-    fileTypeToSet = [typeName copy];
-    
-    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
-    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
-    [layoutMgrs release];
-    
-    val = [docAttrs objectForKey:NSCharacterEncodingDocumentAttribute];
-    [self setEncoding:(val ? [val unsignedIntegerValue] : NoStringEncoding)];
-    
-    if ((val = [docAttrs objectForKey:NSConvertedDocumentAttribute])) {
-        [self setConverted:([val integerValue] > 0)];	// Indicates filtered
-        [self setLossy:([val integerValue] < 0)];	// Indicates lossily loaded
-    }
-    
-    /* If the document has a stored value for view mode, use it. Otherwise wrap to window. */
-    if ((val = [docAttrs objectForKey:NSViewModeDocumentAttribute])) {
-        [self setHasMultiplePages:([val integerValue] == 1)];
-        if ((val = [docAttrs objectForKey:NSViewZoomDocumentAttribute])) {
-            [self setScaleFactor:([val doubleValue] / 100.0)];
-        }
-    } else [self setHasMultiplePages:NO];
-    
-    [self willChangeValueForKey:@"printInfo"];
-    if ((val = [docAttrs objectForKey:NSLeftMarginDocumentAttribute])) [[self printInfo] setLeftMargin:[val doubleValue]];
-    if ((val = [docAttrs objectForKey:NSRightMarginDocumentAttribute])) [[self printInfo] setRightMargin:[val doubleValue]];
-    if ((val = [docAttrs objectForKey:NSBottomMarginDocumentAttribute])) [[self printInfo] setBottomMargin:[val doubleValue]];
-    if ((val = [docAttrs objectForKey:NSTopMarginDocumentAttribute])) [[self printInfo] setTopMargin:[val doubleValue]];
-    [self didChangeValueForKey:@"printInfo"];
-    
-    /* Pre MacOSX versions of TextEdit wrote out the view (window) size in PaperSize.
-	If we encounter a non-MacOSX RTF file, and it's written by TextEdit, use PaperSize as ViewSize */
-    viewSizeVal = [docAttrs objectForKey:NSViewSizeDocumentAttribute];
-    paperSizeVal = [docAttrs objectForKey:NSPaperSizeDocumentAttribute];
-    if (paperSizeVal && NSEqualSizes([paperSizeVal sizeValue], NSZeroSize)) paperSizeVal = nil;	// Protect against some old documents with 0 paper size
-    
-    if (viewSizeVal) {
-        [self setViewSize:[viewSizeVal sizeValue]];
-        if (paperSizeVal) [self setPaperSize:[paperSizeVal sizeValue]];
-    } else {	// No ViewSize...
-        if (paperSizeVal) {	// See if PaperSize should be used as ViewSize; if so, we also have some tweaking to do on it
-            val = [docAttrs objectForKey:NSCocoaVersionDocumentAttribute];
-            if (val && ([val integerValue] < 100)) {	// Indicates old RTF file; value described in AppKit/NSAttributedString.h
-                NSSize size = [paperSizeVal sizeValue];
-                if (size.width > 0 && size.height > 0 && ![self hasMultiplePages]) {
-                    size.width = size.width - oldEditPaddingCompensation;
-                    [self setViewSize:size];
-                }
-            } else {
-		[self setPaperSize:[paperSizeVal sizeValue]];
-            }
-        }
-    }
-    
-    [self setHyphenationFactor:(val = [docAttrs objectForKey:NSHyphenationFactorDocumentAttribute]) ? [val floatValue] : 0];
-    [self setBackgroundColor:(val = [docAttrs objectForKey:NSBackgroundColorDocumentAttribute]) ? val : [NSColor whiteColor]];
-    
-    // Set the document properties, generically, going through key value coding
-    NSDictionary *map = [self documentPropertyToAttributeNameMappings];
-    for (NSString *property in [self knownDocumentProperties]) [self setValue:[docAttrs objectForKey:[map objectForKey:property]] forKey:property];	// OK to set nil to clear
-    
-    [self setReadOnly:((val = [docAttrs objectForKey:NSReadOnlyDocumentAttribute]) && ([val integerValue] > 0))];
-    
-    [self setOriginalOrientationSections:[docAttrs objectForKey:NSTextLayoutSectionsAttribute]];
-
-    [self setUsesScreenFonts:[self isRichText] ? [[docAttrs objectForKey:NSUsesScreenFontsDocumentAttribute] boolValue] : YES];
-
-    [[self undoManager] enableUndoRegistration];
-    
-    return YES;
-}
+//- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError {
+//    NSMutableDictionary *options = [NSMutableDictionary dictionaryWithCapacity:5];
+//    NSDictionary *docAttrs;
+//    id val, paperSizeVal, viewSizeVal;
+//    NSTextStorage *text = [self textStorage];
+//    
+//    /* generalize the passed-in type to a type we support.  for instance, generalize "public.xml" to "public.txt" */
+//    typeName = [[self class] readableTypeForType:typeName];
+//    
+//    [fileTypeToSet release];
+//    fileTypeToSet = nil;
+//    
+//    [[self undoManager] disableUndoRegistration];
+//    
+//    [options setObject:absoluteURL forKey:NSBaseURLDocumentOption];
+//    if (encoding != NoStringEncoding) {
+//        [options setObject:[NSNumber numberWithUnsignedInteger:encoding] forKey:NSCharacterEncodingDocumentOption];
+//    }
+//    [self setEncoding:encoding];
+//    
+//    // Check type to see if we should load the document as plain. Note that this check isn't always conclusive, which is why we do another check below, after the document has been loaded (and correctly categorized).
+//    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+//    if ((ignoreRTF && ([workspace type:typeName conformsToType:(NSString *)kUTTypeRTF] || [workspace type:typeName conformsToType:Word2003XMLType])) || (ignoreHTML && [workspace type:typeName conformsToType:(NSString *)kUTTypeHTML]) || [self isOpenedIgnoringRichText]) {
+//        [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption]; // Force plain
+//        typeName = (NSString *)kUTTypeText;
+//        [self setOpenedIgnoringRichText:YES];
+//    }
+//    
+//    [[text mutableString] setString:@""];
+//    // Remove the layout managers while loading the text; mutableCopy retains the array so the layout managers aren't released
+//    NSMutableArray *layoutMgrs = [[text layoutManagers] mutableCopy];
+//    NSEnumerator *layoutMgrEnum = [layoutMgrs objectEnumerator];
+//    NSLayoutManager *layoutMgr = nil;
+//    while ((layoutMgr = [layoutMgrEnum nextObject])) [text removeLayoutManager:layoutMgr];
+//    
+//    // We can do this loop twice, if the document is loaded as rich text although the user requested plain
+//    BOOL retry;
+//    do {
+//	BOOL success;
+//	NSString *docType;
+//	
+//	retry = NO;
+//
+//	[text beginEditing];
+//	success = [text readFromURL:absoluteURL options:options documentAttributes:&docAttrs error:outError];
+//
+//        if (!success) {
+//	    [text endEditing];
+//	    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
+//	    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
+//	    [layoutMgrs release];
+//	    return NO;	// return NO on error; outError has already been set
+//	}
+//	
+//	docType = [docAttrs objectForKey:NSDocumentTypeDocumentAttribute];
+//
+//	// First check to see if the document was rich and should have been loaded as plain
+//	if (![[options objectForKey:NSDocumentTypeDocumentOption] isEqualToString:NSPlainTextDocumentType] && ((ignoreHTML && [docType isEqual:NSHTMLTextDocumentType]) || (ignoreRTF && ([docType isEqual:NSRTFTextDocumentType] || [docType isEqual:NSWordMLTextDocumentType])))) {
+//	    [text endEditing];
+//	    [[text mutableString] setString:@""];
+//	    [options setObject:NSPlainTextDocumentType forKey:NSDocumentTypeDocumentOption];
+//	    typeName = (NSString *)kUTTypeText;
+//	    [self setOpenedIgnoringRichText:YES];
+//	    retry = YES;
+//	} else {
+//	    NSString *newFileType = [[self textDocumentTypeToTextEditDocumentTypeMappingTable] objectForKey:docType];
+//	    if (newFileType) {
+//            typeName = newFileType;
+//	    } else {
+//            typeName = (NSString *)kUTTypeRTF; // Hmm, a new type in the Cocoa text system. Treat it as rich. ??? Should set the converted flag too?
+//	    }
+//        if (![[self class] isRichTextType:typeName]) [self applyDefaultTextAttributes:NO];
+//	    [text endEditing];
+//	}
+//    } while(retry);
+//    
+//    [self setFileType:typeName];
+//    // If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
+//    fileTypeToSet = [typeName copy];
+//    
+//    layoutMgrEnum = [layoutMgrs objectEnumerator]; // rewind
+//    while ((layoutMgr = [layoutMgrEnum nextObject])) [text addLayoutManager:layoutMgr];   // Add the layout managers back
+//    [layoutMgrs release];
+//    
+//    val = [docAttrs objectForKey:NSCharacterEncodingDocumentAttribute];
+//    [self setEncoding:(val ? [val unsignedIntegerValue] : NoStringEncoding)];
+//    
+//    if ((val = [docAttrs objectForKey:NSConvertedDocumentAttribute])) {
+//        [self setConverted:([val integerValue] > 0)];	// Indicates filtered
+//        [self setLossy:([val integerValue] < 0)];	// Indicates lossily loaded
+//    }
+//    
+//    /* If the document has a stored value for view mode, use it. Otherwise wrap to window. */
+//    if ((val = [docAttrs objectForKey:NSViewModeDocumentAttribute])) {
+//        [self setHasMultiplePages:([val integerValue] == 1)];
+//        if ((val = [docAttrs objectForKey:NSViewZoomDocumentAttribute])) {
+//            [self setScaleFactor:([val doubleValue] / 100.0)];
+//        }
+//    } else [self setHasMultiplePages:NO];
+//    
+//    [self willChangeValueForKey:@"printInfo"];
+//    if ((val = [docAttrs objectForKey:NSLeftMarginDocumentAttribute])) [[self printInfo] setLeftMargin:[val doubleValue]];
+//    if ((val = [docAttrs objectForKey:NSRightMarginDocumentAttribute])) [[self printInfo] setRightMargin:[val doubleValue]];
+//    if ((val = [docAttrs objectForKey:NSBottomMarginDocumentAttribute])) [[self printInfo] setBottomMargin:[val doubleValue]];
+//    if ((val = [docAttrs objectForKey:NSTopMarginDocumentAttribute])) [[self printInfo] setTopMargin:[val doubleValue]];
+//    [self didChangeValueForKey:@"printInfo"];
+//    
+//    /* Pre MacOSX versions of TextEdit wrote out the view (window) size in PaperSize.
+//	If we encounter a non-MacOSX RTF file, and it's written by TextEdit, use PaperSize as ViewSize */
+//    viewSizeVal = [docAttrs objectForKey:NSViewSizeDocumentAttribute];
+//    paperSizeVal = [docAttrs objectForKey:NSPaperSizeDocumentAttribute];
+//    if (paperSizeVal && NSEqualSizes([paperSizeVal sizeValue], NSZeroSize)) paperSizeVal = nil;	// Protect against some old documents with 0 paper size
+//    
+//    if (viewSizeVal) {
+//        [self setViewSize:[viewSizeVal sizeValue]];
+//        if (paperSizeVal) [self setPaperSize:[paperSizeVal sizeValue]];
+//    } else {	// No ViewSize...
+//        if (paperSizeVal) {	// See if PaperSize should be used as ViewSize; if so, we also have some tweaking to do on it
+//            val = [docAttrs objectForKey:NSCocoaVersionDocumentAttribute];
+//            if (val && ([val integerValue] < 100)) {	// Indicates old RTF file; value described in AppKit/NSAttributedString.h
+//                NSSize size = [paperSizeVal sizeValue];
+//                if (size.width > 0 && size.height > 0 && ![self hasMultiplePages]) {
+//                    size.width = size.width - oldEditPaddingCompensation;
+//                    [self setViewSize:size];
+//                }
+//            } else {
+//		[self setPaperSize:[paperSizeVal sizeValue]];
+//            }
+//        }
+//    }
+//    
+//    [self setHyphenationFactor:(val = [docAttrs objectForKey:NSHyphenationFactorDocumentAttribute]) ? [val floatValue] : 0];
+//    [self setBackgroundColor:(val = [docAttrs objectForKey:NSBackgroundColorDocumentAttribute]) ? val : [NSColor whiteColor]];
+//    
+//    // Set the document properties, generically, going through key value coding
+//    NSDictionary *map = [self documentPropertyToAttributeNameMappings];
+//    for (NSString *property in [self knownDocumentProperties]) [self setValue:[docAttrs objectForKey:[map objectForKey:property]] forKey:property];	// OK to set nil to clear
+//    
+//    [self setReadOnly:((val = [docAttrs objectForKey:NSReadOnlyDocumentAttribute]) && ([val integerValue] > 0))];
+//    
+//    [self setOriginalOrientationSections:[docAttrs objectForKey:NSTextLayoutSectionsAttribute]];
+//
+//    [self setUsesScreenFonts:[self isRichText] ? [[docAttrs objectForKey:NSUsesScreenFontsDocumentAttribute] boolValue] : YES];
+//
+//    [[self undoManager] enableUndoRegistration];
+//    
+//    return YES;
+//}
 
 - (NSDictionary *)defaultTextAttributes:(BOOL)forRichText {
     static NSParagraphStyle *defaultRichParaStyle = nil;
@@ -392,8 +396,6 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     [copyright release];
     [company release];
     
-    [fileTypeToSet release];
-
     [originalOrientationSections release];
     [super dealloc];
 }
@@ -516,13 +518,13 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
     lossyDocument = flag;
 }
 
-- (BOOL)isOpenedIgnoringRichText {
-    return openedIgnoringRichText;
-}
-
-- (void)setOpenedIgnoringRichText:(BOOL)flag {
-    openedIgnoringRichText = flag;
-}
+//- (BOOL)isOpenedIgnoringRichText {
+//    return openedIgnoringRichText;
+//}
+//
+//- (void)setOpenedIgnoringRichText:(BOOL)flag {
+//    openedIgnoringRichText = flag;
+//}
 
 /* A transient document is an untitled document that was opened automatically. If a real document is opened before the transient document is edited, the real document should replace the transient. If a transient document is edited, it ceases to be transient. 
 */
@@ -800,10 +802,9 @@ void validateToggleItem(NSMenuItem *aCell, BOOL useFirst, NSString *first, NSStr
 - (BOOL)revertToContentsOfURL:(NSURL *)url ofType:(NSString *)type error:(NSError **)outError {
     BOOL success = [super revertToContentsOfURL:url ofType:type error:outError];
     if (success) {
-        if (fileTypeToSet) {	// If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
-            [self setFileType:fileTypeToSet];
-            [fileTypeToSet release];
-            fileTypeToSet = nil;
+        if (self.fileTypeToSet) {	// If we're reverting, NSDocument will set the file type behind out backs. This enables restoring that type.
+            [self setFileType:self.fileTypeToSet];
+            self.fileTypeToSet = nil;
         }
         [self setHasMultiplePages:hasMultiplePages];
         [[self windowControllers] makeObjectsPerformSelector:@selector(setupTextViewForDocument)];

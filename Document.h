@@ -86,23 +86,24 @@
                                                         in -fileWrapperOfType:error: */
     
     
-    // Temporary information about document's desired file type
-    NSString *fileTypeToSet;		/* Actual file type determined during a read, and set after the read (which includes revert) is complete. */ 
 
 }
 
-- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError;
+//- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError;
 
 /* Is the document rich? */
-- (BOOL)isRichText;
+@property (readonly) BOOL isRichText;
+//- (BOOL)isRichText;
 
 /* Is the document read-only? */
-- (BOOL)isReadOnly;
-- (void)setReadOnly:(BOOL)flag;
+@property (getter=isReadOnly) BOOL readOnly;
+//- (BOOL)isReadOnly;
+//- (void)setReadOnly:(BOOL)flag;
 
 /* Document background color */
-- (NSColor *)backgroundColor;
-- (void)setBackgroundColor:(NSColor *)color;
+@property (retain) NSColor *backgroundColor;
+//- (NSColor *)backgroundColor;
+//- (void)setBackgroundColor:(NSColor *)color;
 
 /* The encoding of the document... */
 - (NSUInteger)encoding;
@@ -117,34 +118,40 @@
 - (void)setConverted:(BOOL)flag;
 
 /* Whether document was opened ignoring rich text */
-- (BOOL)isOpenedIgnoringRichText;
-- (void)setOpenedIgnoringRichText:(BOOL)flag;
+@property BOOL openedIgnoringRichText; /* Setting at the the time the doc was open (so revert does the same thing) */
+//- (BOOL)isOpenedIgnoringRichText;
+//- (void)setOpenedIgnoringRichText:(BOOL)flag;
 
 /* Whether document was loaded lossily */
 - (BOOL)isLossy;
 - (void)setLossy:(BOOL)flag;
 
 /* Hyphenation factor (0.0-1.0, 0.0 == disabled) */
-- (float)hyphenationFactor;
-- (void)setHyphenationFactor:(float)factor;
+@property float hyphenationFactor;
+//- (float)hyphenationFactor;
+//- (void)setHyphenationFactor:(float)factor;
 
 /* View size (as it should be saved in a RTF file) */
-- (NSSize)viewSize;
-- (void)setViewSize:(NSSize)newSize;
+@property CGSize viewSize;
+//- (NSSize)viewSize;
+//- (void)setViewSize:(NSSize)newSize;
 
 /* Scale factor; 1.0 is 100% */
 - (CGFloat)scaleFactor;
 - (void)setScaleFactor:(CGFloat)scaleFactor;
 
 /* Attributes */
-- (NSTextStorage *)textStorage;
-- (void)setTextStorage:(id)ts; // This will _copy_ the contents of the NS[Attributed]String ts into the document's textStorage.
+@property (copy) NSTextStorage *textStorage;
+//- (NSTextStorage *)textStorage;
+//- (void)setTextStorage:(id)ts; // This will _copy_ the contents of the NS[Attributed]String ts into the document's textStorage.
 
 /* Page-oriented methods */
-- (void)setHasMultiplePages:(BOOL)flag;
-- (BOOL)hasMultiplePages;
-- (NSSize)paperSize;
-- (void)setPaperSize:(NSSize)size;
+@property BOOL hasMultiplePages;
+//- (void)setHasMultiplePages:(BOOL)flag;
+//- (BOOL)hasMultiplePages;
+@property CGSize paperSize;
+//- (NSSize)paperSize;
+//- (void)setPaperSize:(NSSize)size;
 
 /* Action methods */
 - (IBAction)toggleReadOnly:(id)sender;
@@ -170,10 +177,17 @@
 - (BOOL)isTransientAndCanBeReplaced;
 
 /* Layout orientation sections */
-- (NSArray *)originalOrientationSections;
-- (void)setOriginalOrientationSections:(NSArray *)array;
+@property (copy) NSArray *originalOrientationSections;
+//- (NSArray *)originalOrientationSections;
+//- (void)setOriginalOrientationSections:(NSArray *)array;
 
 /* Screen fonts property */
-- (BOOL)usesScreenFonts;
-- (void)setUsesScreenFonts:(BOOL)aFlag;
+@property BOOL usesScreenFonts;
+//- (BOOL)usesScreenFonts;
+//- (void)setUsesScreenFonts:(BOOL)aFlag;
+
+
+     // Temporary information about document's desired file type
+@property (copy) NSString *fileTypeToSet;		/* Actual file type determined during a read, and set after the read (which includes revert) is complete. */
+
 @end
