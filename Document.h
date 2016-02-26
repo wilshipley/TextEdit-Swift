@@ -80,13 +80,6 @@
     BOOL transient;			/* Untitled document automatically opened and never modified */
     NSArray *originalOrientationSections; /* An array of dictionaries. Each describing the text layout orientation for a page */
     
-    // Temporary information about how to save the document
-    NSStringEncoding documentEncodingForSaving;	    /* NSStringEncoding for saving the document */
-    NSSaveOperationType currentSaveOperation;          /* So we can know whether to use documentEncodingForSaving or documentEncoding
-                                                        in -fileWrapperOfType:error: */
-    
-    
-
 }
 
 //- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError;
@@ -106,16 +99,19 @@
 //- (void)setBackgroundColor:(NSColor *)color;
 
 /* The encoding of the document... */
-- (NSUInteger)encoding;
-- (void)setEncoding:(NSUInteger)encoding;
+@property NSUInteger encoding;
+//- (NSUInteger)encoding;
+//- (void)setEncoding:(NSUInteger)encoding;
 
 /* Encoding of the document chosen when saving */
-- (NSUInteger)encodingForSaving;
-- (void)setEncodingForSaving:(NSUInteger)encoding;
+@property NSUInteger encodingForSaving;
+//- (NSUInteger)encodingForSaving;
+//- (void)setEncodingForSaving:(NSUInteger)encoding;
 
 /* Whether document was converted from some other format (filter services) */
-- (BOOL)isConverted;
-- (void)setConverted:(BOOL)flag;
+@property (getter=isConverted) BOOL converted;
+//- (BOOL)isConverted;
+//- (void)setConverted:(BOOL)flag;
 
 /* Whether document was opened ignoring rich text */
 @property BOOL openedIgnoringRichText; /* Setting at the the time the doc was open (so revert does the same thing) */
@@ -123,8 +119,9 @@
 //- (void)setOpenedIgnoringRichText:(BOOL)flag;
 
 /* Whether document was loaded lossily */
-- (BOOL)isLossy;
-- (void)setLossy:(BOOL)flag;
+@property (getter=isLossy) BOOL lossy;
+//- (BOOL)isLossy;
+//- (void)setLossy:(BOOL)flag;
 
 /* Hyphenation factor (0.0-1.0, 0.0 == disabled) */
 @property float hyphenationFactor;
@@ -137,8 +134,9 @@
 //- (void)setViewSize:(NSSize)newSize;
 
 /* Scale factor; 1.0 is 100% */
-- (CGFloat)scaleFactor;
-- (void)setScaleFactor:(CGFloat)scaleFactor;
+@property CGFloat scaleFactor;
+//- (CGFloat)scaleFactor;
+//- (void)setScaleFactor:(CGFloat)scaleFactor;
 
 /* Attributes */
 @property (copy) NSTextStorage *textStorage;
@@ -158,7 +156,7 @@
 - (IBAction)togglePageBreaks:(id)sender;
 
 /* Whether conversion to rich/plain be done without loss of information */
-- (BOOL)toggleRichWillLoseInformation;
+@property (readonly) BOOL toggleRichWillLoseInformation;
 
 /* Default text attributes for plain or rich text formats */
 - (NSDictionary *)defaultTextAttributes:(BOOL)forRichText;
@@ -169,12 +167,13 @@
 - (NSArray *)knownDocumentProperties;
 - (void)clearDocumentProperties;
 - (void)setDocumentPropertiesToDefaults;
-- (BOOL)hasDocumentProperties;
+@property (readonly) BOOL hasDocumentProperties;
 
 /* Transient documents */
-- (BOOL)isTransient;
-- (void)setTransient:(BOOL)flag;
-- (BOOL)isTransientAndCanBeReplaced;
+@property (getter=isTransient) BOOL transient;
+//- (BOOL)isTransient;
+//- (void)setTransient:(BOOL)flag;
+@property (readonly) BOOL isTransientAndCanBeReplaced;
 
 /* Layout orientation sections */
 @property (copy) NSArray *originalOrientationSections;
@@ -187,7 +186,14 @@
 //- (void)setUsesScreenFonts:(BOOL)aFlag;
 
 
-     // Temporary information about document's desired file type
+// TEMP HACK TO EXPOSE TO SWIFT
+- (NSStringEncoding)suggestedDocumentEncoding;
+
+ // Temporary information about document's desired file type
 @property (copy) NSString *fileTypeToSet;		/* Actual file type determined during a read, and set after the read (which includes revert) is complete. */
+// Temporary information about how to save the document
+@property NSStringEncoding documentEncodingForSaving;	    /* NSStringEncoding for saving the document */
+@property NSSaveOperationType currentSaveOperation;          /* So we can know whether to use documentEncodingForSaving or documentEncoding in -fileWrapperOfType:error: */
+
 
 @end

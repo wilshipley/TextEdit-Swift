@@ -8,15 +8,164 @@
 
 import Cocoa
 
-extension Document {
+public extension Document {
     
     // MARK: NSDocument
     
+    override public func fileWrapperOfType(typeName: String) throws -> NSFileWrapper { // Returns an object that represents the document to be written to file.
+        
+        var documentAttributes: [String : AnyObject] = [
+            NSPaperSizeDocumentAttribute: NSValue(size: paperSize),
+            NSReadOnlyDocumentAttribute: NSNumber(integer: readOnly ? 1 : 0),
+            NSHyphenationFactorDocumentAttribute: NSNumber(float: hyphenationFactor),
+            NSLeftMarginDocumentAttribute: NSNumber(double: Double(printInfo.leftMargin)),
+            NSRightMarginDocumentAttribute: NSNumber(double: Double(printInfo.rightMargin)),
+            NSBottomMarginDocumentAttribute: NSNumber(double: Double(printInfo.bottomMargin)),
+            NSTopMarginDocumentAttribute: NSNumber(double: Double(printInfo.topMargin)),
+            NSViewModeDocumentAttribute: NSNumber(integer: hasMultiplePages ? 1 : 0),
+            NSUsesScreenFontsDocumentAttribute: NSNumber(bool: usesScreenFonts),
+        ]
+        
+        if viewSize != .zero {
+            documentAttributes[NSViewSizeDocumentAttribute] = NSValue(size: viewSize)
+        }
+
+        
+        // TextEdit knows how to save all these types, including their super-types. It does not know how to save any of their potential subtypes. Hence, the conformance check is the reverse of the usual pattern.
+        let documentType: String = {
+            let workspace = NSWorkspace.sharedWorkspace()
+            // kUTTypePlainText also handles kUTTypeText and has to come before the other types so we will use the least specialized type
+            // For example, kUTTypeText is an ancestor of kUTTypeText and kUTTypeRTF but we should use kUTTypeText because kUTTypeText is an ancestor of kUTTypeRTF.
+            if workspace.type(kUTTypePlainText as String, conformsToType: typeName) { return NSPlainTextDocumentType }
+            else if workspace.type(kUTTypeRTF as String, conformsToType: typeName) { return NSRTFTextDocumentType }
+            else if workspace.type(kUTTypeRTFD as String, conformsToType: typeName) { return NSRTFDTextDocumentType }
+            else if workspace.type(Document.SimpleTextType, conformsToType: typeName) { return NSMacSimpleTextDocumentType }
+            else if workspace.type(Document.Word97Type, conformsToType: typeName) { return NSDocFormatTextDocumentType }
+            else if workspace.type(Document.Word2007Type, conformsToType: typeName) { return NSOfficeOpenXMLTextDocumentType }
+            else if workspace.type(Document.Word2003XMLType, conformsToType: typeName) { return NSWordMLTextDocumentType }
+            else if workspace.type(Document.OpenDocumentTextType, conformsToType: typeName) { return NSOpenDocumentTextDocumentType }
+            else if workspace.type(kUTTypeHTML as String, conformsToType: typeName) { return NSHTMLTextDocumentType }
+            else if workspace.type(kUTTypeWebArchive as String, conformsToType: typeName) { return NSWebArchiveTextDocumentType }
+            else {
+                NSException(name: NSInvalidArgumentException, reason: typeName + " is not a recognized document type.", userInfo: nil).raise()
+                return NSPlainTextDocumentType // notreached
+            }
+        }()
+
+        documentAttributes[NSDocumentTypeDocumentAttribute] = documentType
+        if hasMultiplePages && scaleFactor != 1.0 {
+            documentAttributes[NSViewZoomDocumentAttribute] = NSNumber(double: Double(scaleFactor) * 100.0)
+        }
+        documentAttributes[NSBackgroundColorDocumentAttribute] = backgroundColor
+        
+        var stringEncoding: NSStringEncoding?
+        switch documentType {
+        case NSPlainTextDocumentType:
+            stringEncoding = encoding
+            if (currentSaveOperation == .SaveOperation || currentSaveOperation == .SaveAsOperation) && (documentEncodingForSaving != UInt(NoStringEncoding)) {
+                stringEncoding = documentEncodingForSaving
+            }
+            if stringEncoding == UInt(NoStringEncoding) {
+                stringEncoding = suggestedDocumentEncoding()
+            }
+            documentAttributes[NSCharacterEncodingDocumentAttribute] = NSNumber(unsignedInteger: stringEncoding!)
+            
+        case NSHTMLTextDocumentType, NSWebArchiveTextDocumentType:
+            var excludedElements = [String]()
+            
+            let defaults = NSUserDefaults.standardUserDefaults()
+            if !defaults.boolForKey(UseXHTMLDocType) {
+                excludedElements.append("XML")
+            }
+            if !defaults.boolForKey(UseTransitionalDocType) {
+                excludedElements.appendContentsOf(["APPLET", "BASEFONT", "CENTER", "DIR", "FONT", "ISINDEX", "MENU", "S", "STRIKE", "U"])
+            }
+            if !defaults.boolForKey(UseEmbeddedCSS) {
+                excludedElements.append("STYLE")
+                if !defaults.boolForKey(UseInlineCSS) {
+                    excludedElements.append("SPAN")
+                }
+            }
+            if !defaults.boolForKey(PreserveWhitespace) {
+                excludedElements.appendContentsOf(["Apple-converted-space", "Apple-converted-tab", "Apple-interchange-newline"])
+            }
+            documentAttributes[NSExcludedElementsDocumentAttribute] = excludedElements
+            documentAttributes[NSCharacterEncodingDocumentAttribute] = defaults.objectForKey(HTMLEncoding)
+            documentAttributes[NSPrefixSpacesDocumentAttribute] = NSNumber(integer: 2)
+            
+        default:
+            break
+        }
+
+        // Set the text layout orientation for each page
+        documentAttributes[NSTextLayoutSectionsAttribute] = (windowControllers.first as? DocumentWindowController)?.layoutOrientationSections()
+        
+        // Set the document properties, generically, going through key value coding
+        self.dynamicType.documentPropertyToAttributeNameMappings.forEach { (property, attributeName) in
+            if let value = valueForKey(property) {
+                switch value {
+                case let array as Array<AnyObject>:
+                    if !array.isEmpty {
+                        documentAttributes[attributeName] = array
+                    }
+                case let string as String:
+                    if !string.isEmpty {
+                        documentAttributes[attributeName] = string
+                    }
+                default:
+                    documentAttributes[attributeName] = value
+                }
+            }
+        }
+        
+        // finally, generate the actual NSFileWrapper
+        let fileWrapper: NSFileWrapper
+        let range = NSMakeRange(0, textStorage.length)
+        if documentType == NSRTFDTextDocumentType
+            || (documentType == NSPlainTextDocumentType && !openedIgnoringRichText) {	// We obtain a file wrapper from the text storage for RTFD (to produce a directory), or for true plain-text documents (to write out encoding in extended attributes)
+                fileWrapper = try textStorage.fileWrapperFromRange(range, documentAttributes: documentAttributes) // returns NSFileWrapper
+
+        } else {
+            let data = try textStorage.dataFromRange(range, documentAttributes: documentAttributes) // returns NSData
+            fileWrapper = NSFileWrapper(regularFileWithContents: data)
+        }
+        
+        // and possibly set the string encoding
+        if documentType == NSPlainTextDocumentType && (currentSaveOperation == .SaveOperation || currentSaveOperation == .SaveAsOperation) {
+            encoding = stringEncoding!
+        }
+        
+        return fileWrapper
+    }
+
     
+    override public func saveToURL(url: NSURL, ofType typeName: String, forSaveOperation saveOperation: NSSaveOperationType, completionHandler: (NSError?) -> Void) {
+        /* When we save, we send a notification so that views that are currently coalescing undo actions can break that. This is done for two reasons, one technical and the other HI oriented.
+        
+        Firstly, since the dirty state tracking is based on undo, for a coalesced set of changes that span over a save operation, the changes that occur between the save and the next time the undo coalescing stops will not mark the document as dirty. Secondly, allowing the user to undo back to the precise point of a save is good UI.
+        
+        In addition we overwrite this method as a way to tell that the document has been saved successfully. If so, we set the save time parameters in the document.
+        */
+
+        windowControllers.forEach {
+            // Note that we do the breakUndoCoalescing call even during autosave, which means the user's undo of long typing will take them back to the last spot an autosave occured. This might seem confusing, and a more elaborate solution may be possible (cause an autosave without having to breakUndoCoalescing), but since this change is coming late in Leopard, we decided to go with the lower risk fix.
+            ($0 as? DocumentWindowController)?.breakUndoCoalescing()
+        }
+        
+        performAsynchronousFileAccessUsingBlock { fileAccessCompletionHandler in
+            self.currentSaveOperation = saveOperation
+            super.saveToURL(url, ofType: typeName, forSaveOperation: saveOperation) { error in
+                self.encodingForSaving = UInt(NoStringEncoding) // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
+                fileAccessCompletionHandler()
+                completionHandler(error)
+            }
+        }
+    }
+
     
     
     // MARK: internal methods
-    func readFromURL(url: NSURL, ofType typeName: String, encoding: NSStringEncoding, ignoreRTF: Bool, ignoreHTML: Bool) throws {
+    func readFromURL(url: NSURL, ofType typeName: String, encoding desiredEncoding: NSStringEncoding, ignoreRTF: Bool, ignoreHTML: Bool) throws {
         var options = [String : AnyObject]()
         
         fileTypeToSet = nil
@@ -24,10 +173,10 @@ extension Document {
         undoManager?.disableUndoRegistration()
         
         options[NSBaseURLDocumentOption] = url
-        if encoding != UInt(NoStringEncoding) {
-            options[NSCharacterEncodingDocumentOption] = encoding
+        if desiredEncoding != UInt(NoStringEncoding) {
+            options[NSCharacterEncodingDocumentOption] = desiredEncoding
         }
-        setEncoding(encoding)
+        encoding = desiredEncoding
         
         // generalize the passed-in type to a type we support.  for instance, generalize "public.xml" to "public.txt"
         var readableTypeName = self.dynamicType.readableTypeForType(typeName) ?? (kUTTypeText as String)
@@ -59,11 +208,11 @@ extension Document {
             
             try textStorage.readFromURL(url, options: options, documentAttributes: &documentAttributes, error: ())
             
-            var docType = (documentAttributes?[NSDocumentTypeDocumentAttribute] as? String) ?? (kUTTypeText as String)
+            var documentType = (documentAttributes?[NSDocumentTypeDocumentAttribute] as? String) ?? (kUTTypeText as String)
             
             // First check to see if the document was rich and should have been loaded as plain
             if (options[NSDocumentTypeDocumentOption] as? String) != NSPlainTextDocumentType
-                && ((ignoreHTML && docType == NSHTMLTextDocumentType) || (ignoreRTF && (docType == NSRTFTextDocumentType || docType == NSWordMLTextDocumentType)))
+                && ((ignoreHTML && documentType == NSHTMLTextDocumentType) || (ignoreRTF && (documentType == NSRTFTextDocumentType || documentType == NSWordMLTextDocumentType)))
             {
                 // load again, this time with FEELING
                 textStorage.endEditing()
@@ -74,10 +223,10 @@ extension Document {
                 
                 textStorage.beginEditing()
                 try! textStorage.readFromURL(url, options: options, documentAttributes: &documentAttributes, error: ()) // didn't fail first time, so won't fail this time
-                docType = (documentAttributes?[NSDocumentTypeDocumentAttribute] as? String) ?? (kUTTypeText as String)
+                documentType = (documentAttributes?[NSDocumentTypeDocumentAttribute] as? String) ?? (kUTTypeText as String)
             }
             
-            if let newFileType = Document.textDocumentTypeToTextEditDocumentTypeMappingTable[docType] {
+            if let newFileType = Document.textDocumentTypeToTextEditDocumentTypeMappingTable[documentType] {
                 readableTypeName = newFileType
             } else {
                 readableTypeName = kUTTypeRTF as String // Hmm, a new type in the Cocoa text system. Treat it as rich. ??? Should set the converted flag too?
@@ -93,18 +242,18 @@ extension Document {
         
         // set up window according to 'documentAttributes'
         let encodingValue = documentAttributes?[NSCharacterEncodingDocumentAttribute] as? NSNumber
-        setEncoding(encodingValue?.unsignedIntegerValue ?? UInt(NoStringEncoding))
+        encoding = encodingValue?.unsignedIntegerValue ?? UInt(NoStringEncoding)
         
         if let convertedDocumentValue = documentAttributes?[NSConvertedDocumentAttribute] {
-            setConverted(convertedDocumentValue.integerValue > 0)	// Indicates filtered
-            setLossy(convertedDocumentValue.integerValue < 0)	// Indicates lossily loaded
+            converted = convertedDocumentValue.integerValue > 0 // Indicates filtered
+            lossy = convertedDocumentValue.integerValue < 0 // Indicates lossily loaded
         }
         
         // If the document has a stored value for view mode, use it. Otherwise wrap to window.
         if let viewModeValue = documentAttributes?[NSViewModeDocumentAttribute] as? NSNumber {
             hasMultiplePages = viewModeValue.integerValue == 1
             if let zoomValue = documentAttributes?[NSViewZoomDocumentAttribute] as? NSNumber {
-                setScaleFactor(CGFloat(zoomValue.doubleValue) / 100.0)
+                scaleFactor = CGFloat(zoomValue.doubleValue) / 100.0
             }
         } else {
             hasMultiplePages = false
@@ -180,8 +329,13 @@ extension Document {
     }
     
 
+//    // MARK: private properties
+//    private var currentSaveOperation: NSSaveOperationType? // So we can know whether to use documentEncodingForSaving or documentEncoding in -fileWrapperOfType:error:
+
     
-    // MARK: private properties
+    
+    
+    // MARK: private static properties
 
     // Document properties management
     private static let documentPropertyToAttributeNameMappings: [String : String] = [ // Table mapping document property keys "company", etc, to text system document attribute keys (NSCompanyDocumentAttribute, etc)
@@ -194,7 +348,6 @@ extension Document {
         "comment": NSCommentDocumentAttribute,
     ]
     private static let knownDocumentProperties = documentPropertyToAttributeNameMappings.keys
-
     
     // Dictionary which maps Cocoa text system document identifiers (as declared in AppKit/NSAttributedString.h) to document types declared in TextEdit's Info.plist.
     private static let textDocumentTypeToTextEditDocumentTypeMappingTable: [String : String] = [

@@ -494,11 +494,11 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 /* This is the encoding used for saving; valid only during a save operation
 */
 - (NSUInteger)encodingForSaving {
-    return documentEncodingForSaving;
+    return self.documentEncodingForSaving;
 }
 
 - (void)setEncodingForSaving:(NSUInteger)encoding {
-    documentEncodingForSaving = encoding;
+    self.documentEncodingForSaving = encoding;
 }
 
 
@@ -882,19 +882,19 @@ Firstly, since the dirty state tracking is based on undo, for a coalesced set of
 
 In addition we overwrite this method as a way to tell that the document has been saved successfully. If so, we set the save time parameters in the document.
 */
-- (void)saveToURL:(NSURL *)absoluteURL ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation completionHandler:(void (^)(NSError *error))handler {
-    // Note that we do the breakUndoCoalescing call even during autosave, which means the user's undo of long typing will take them back to the last spot an autosave occured. This might seem confusing, and a more elaborate solution may be possible (cause an autosave without having to breakUndoCoalescing), but since this change is coming late in Leopard, we decided to go with the lower risk fix.
-    [[self windowControllers] makeObjectsPerformSelector:@selector(breakUndoCoalescing)];
-    [self performAsynchronousFileAccessUsingBlock:^(void (^fileAccessCompletionHandler)(void) ) {
-        currentSaveOperation = saveOperation;
-        [super saveToURL:absoluteURL ofType:typeName forSaveOperation:saveOperation completionHandler:^(NSError *error) {
-            [self setEncodingForSaving:NoStringEncoding];   // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
-            fileAccessCompletionHandler();
-            handler(error);
-        }];
-    }];
-    
-}
+//- (void)saveToURL:(NSURL *)absoluteURL ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation completionHandler:(void (^)(NSError *error))handler {
+//    // Note that we do the breakUndoCoalescing call even during autosave, which means the user's undo of long typing will take them back to the last spot an autosave occured. This might seem confusing, and a more elaborate solution may be possible (cause an autosave without having to breakUndoCoalescing), but since this change is coming late in Leopard, we decided to go with the lower risk fix.
+//    [[self windowControllers] makeObjectsPerformSelector:@selector(breakUndoCoalescing)];
+//    [self performAsynchronousFileAccessUsingBlock:^(void (^fileAccessCompletionHandler)(void) ) {
+//        currentSaveOperation = saveOperation;
+//        [super saveToURL:absoluteURL ofType:typeName forSaveOperation:saveOperation completionHandler:^(NSError *error) {
+//            [self setEncodingForSaving:NoStringEncoding];   // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
+//            fileAccessCompletionHandler();
+//            handler(error);
+//        }];
+//    }];
+//    
+//}
 
 /* Indicate the types we know we can save safely asynchronously.
 */
@@ -1139,103 +1139,103 @@ In addition we overwrite this method as a way to tell that the document has been
     ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, didRecover, contextInfo);
 }
 
-/* Returns an object that represents the document to be written to file. 
-*/
-- (id)fileWrapperOfType:(NSString *)typeName error:(NSError **)outError {
-    NSTextStorage *text = [self textStorage];
-    NSRange range = NSMakeRange(0, [text length]);
-    NSStringEncoding enc;
-    
-    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys:
-	[NSValue valueWithSize:[self paperSize]], NSPaperSizeDocumentAttribute, 
-	[NSNumber numberWithInteger:[self isReadOnly] ? 1 : 0], NSReadOnlyDocumentAttribute, 
-	[NSNumber numberWithFloat:[self hyphenationFactor]], NSHyphenationFactorDocumentAttribute, 
-	[NSNumber numberWithDouble:[[self printInfo] leftMargin]], NSLeftMarginDocumentAttribute, 
-	[NSNumber numberWithDouble:[[self printInfo] rightMargin]], NSRightMarginDocumentAttribute, 
-	[NSNumber numberWithDouble:[[self printInfo] bottomMargin]], NSBottomMarginDocumentAttribute, 
-	[NSNumber numberWithDouble:[[self printInfo] topMargin]], NSTopMarginDocumentAttribute, 
-	[NSNumber numberWithInteger:[self hasMultiplePages] ? 1 : 0], NSViewModeDocumentAttribute,
-	[NSNumber numberWithBool:[self usesScreenFonts]], NSUsesScreenFontsDocumentAttribute,
-	nil];
-    NSString *docType = nil;
-    id val = nil; // temporary values
-    
-    NSSize size = [self viewSize];
-    if (!NSEqualSizes(size, NSZeroSize)) {
-	[dict setObject:[NSValue valueWithSize:size] forKey:NSViewSizeDocumentAttribute];
-    }
-    
-    // TextEdit knows how to save all these types, including their super-types. It does not know how to save any of their potential subtypes. Hence, the conformance check is the reverse of the usual pattern.
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    // kUTTypePlainText also handles kUTTypeText and has to come before the other types so we will use the least specialized type
-    // For example, kUTTypeText is an ancestor of kUTTypeText and kUTTypeRTF but we should use kUTTypeText because kUTTypeText is an ancestor of kUTTypeRTF.
-    if ([workspace type:(NSString *)kUTTypePlainText conformsToType:typeName]) docType = NSPlainTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeRTF conformsToType:typeName]) docType = NSRTFTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeRTFD conformsToType:typeName]) docType = NSRTFDTextDocumentType;
-    else if ([workspace type:SimpleTextType conformsToType:typeName]) docType = NSMacSimpleTextDocumentType;
-    else if ([workspace type:Word97Type conformsToType:typeName]) docType = NSDocFormatTextDocumentType;
-    else if ([workspace type:Word2007Type conformsToType:typeName]) docType = NSOfficeOpenXMLTextDocumentType;
-    else if ([workspace type:Word2003XMLType conformsToType:typeName]) docType = NSWordMLTextDocumentType;
-    else if ([workspace type:OpenDocumentTextType conformsToType:typeName]) docType = NSOpenDocumentTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeHTML conformsToType:typeName]) docType = NSHTMLTextDocumentType;
-    else if ([workspace type:(NSString *)kUTTypeWebArchive conformsToType:typeName]) docType = NSWebArchiveTextDocumentType;
-    else [NSException raise:NSInvalidArgumentException format:@"%@ is not a recognized document type.", typeName];
-    
-    if (docType) [dict setObject:docType forKey:NSDocumentTypeDocumentAttribute];
-    if ([self hasMultiplePages] && ([self scaleFactor] != 1.0)) [dict setObject:[NSNumber numberWithDouble:[self scaleFactor] * 100.0] forKey:NSViewZoomDocumentAttribute];
-    if ((val = [self backgroundColor])) [dict setObject:val forKey:NSBackgroundColorDocumentAttribute];
-    
-    if (docType == NSPlainTextDocumentType) {
-        enc = [self encoding];
-        if ((currentSaveOperation == NSSaveOperation || currentSaveOperation == NSSaveAsOperation) && (documentEncodingForSaving != NoStringEncoding)) {
-            enc = documentEncodingForSaving;
-        }
-        if (enc == NoStringEncoding) enc = [self suggestedDocumentEncoding];
-        [dict setObject:[NSNumber numberWithUnsignedInteger:enc] forKey:NSCharacterEncodingDocumentAttribute];
-    } else if (docType == NSHTMLTextDocumentType || docType == NSWebArchiveTextDocumentType) {
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSMutableArray *excludedElements = [NSMutableArray array];
-        if (![defaults boolForKey:UseXHTMLDocType]) [excludedElements addObject:@"XML"];
-        if (![defaults boolForKey:UseTransitionalDocType]) [excludedElements addObjectsFromArray:[NSArray arrayWithObjects:@"APPLET", @"BASEFONT", @"CENTER", @"DIR", @"FONT", @"ISINDEX", @"MENU", @"S", @"STRIKE", @"U", nil]];
-        if (![defaults boolForKey:UseEmbeddedCSS]) {
-            [excludedElements addObject:@"STYLE"];
-            if (![defaults boolForKey:UseInlineCSS]) [excludedElements addObject:@"SPAN"];
-        }
-        if (![defaults boolForKey:PreserveWhitespace]) {
-            [excludedElements addObject:@"Apple-converted-space"];
-            [excludedElements addObject:@"Apple-converted-tab"];
-            [excludedElements addObject:@"Apple-interchange-newline"];
-        }
-        [dict setObject:excludedElements forKey:NSExcludedElementsDocumentAttribute];
-        [dict setObject:[defaults objectForKey:HTMLEncoding] forKey:NSCharacterEncodingDocumentAttribute];
-        [dict setObject:[NSNumber numberWithInteger:2] forKey:NSPrefixSpacesDocumentAttribute];
-    }
-        
-    // Set the text layout orientation for each page
-    if ((val = [[[self windowControllers] objectAtIndex:0] layoutOrientationSections])) [dict setObject:val forKey:NSTextLayoutSectionsAttribute];
-
-    // Set the document properties, generically, going through key value coding
-    for (NSString *property in [self knownDocumentProperties]) {
-	id value = [self valueForKey:property];
-	if (value && ![value isEqual:@""] && ![value isEqual:[NSArray array]]) [dict setObject:value forKey:[[self documentPropertyToAttributeNameMappings] objectForKey:property]];
-    }
-    
-    NSFileWrapper *result = nil;
-    if (docType == NSRTFDTextDocumentType || (docType == NSPlainTextDocumentType && ![self isOpenedIgnoringRichText])) {	// We obtain a file wrapper from the text storage for RTFD (to produce a directory), or for true plain-text documents (to write out encoding in extended attributes)
-        result = [text fileWrapperFromRange:range documentAttributes:dict error:outError]; // returns NSFileWrapper
-    } else {
-    	NSData *data = [text dataFromRange:range documentAttributes:dict error:outError]; // returns NSData
-	if (data) {
-	    result = [[[NSFileWrapper alloc] initRegularFileWithContents:data] autorelease];
-	    if (!result && outError) *outError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];    // Unlikely, but just in case we should generate an NSError
-        }
-    }
-    if (result && docType == NSPlainTextDocumentType && (currentSaveOperation == NSSaveOperation || currentSaveOperation == NSSaveAsOperation)) {
-        [self setEncoding:enc];
-    }
-    
-    return result;
-}
+///* Returns an object that represents the document to be written to file. 
+//*/
+//- (id)fileWrapperOfType:(NSString *)typeName error:(NSError **)outError {
+//    NSTextStorage *text = [self textStorage];
+//    NSRange range = NSMakeRange(0, [text length]);
+//    NSStringEncoding enc;
+//    
+//    NSMutableDictionary *dict = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+//	[NSValue valueWithSize:[self paperSize]], NSPaperSizeDocumentAttribute, 
+//	[NSNumber numberWithInteger:[self isReadOnly] ? 1 : 0], NSReadOnlyDocumentAttribute, 
+//	[NSNumber numberWithFloat:[self hyphenationFactor]], NSHyphenationFactorDocumentAttribute, 
+//	[NSNumber numberWithDouble:[[self printInfo] leftMargin]], NSLeftMarginDocumentAttribute, 
+//	[NSNumber numberWithDouble:[[self printInfo] rightMargin]], NSRightMarginDocumentAttribute, 
+//	[NSNumber numberWithDouble:[[self printInfo] bottomMargin]], NSBottomMarginDocumentAttribute, 
+//	[NSNumber numberWithDouble:[[self printInfo] topMargin]], NSTopMarginDocumentAttribute, 
+//	[NSNumber numberWithInteger:[self hasMultiplePages] ? 1 : 0], NSViewModeDocumentAttribute,
+//	[NSNumber numberWithBool:[self usesScreenFonts]], NSUsesScreenFontsDocumentAttribute,
+//	nil];
+//    NSString *docType = nil;
+//    id val = nil; // temporary values
+//    
+//    NSSize size = [self viewSize];
+//    if (!NSEqualSizes(size, NSZeroSize)) {
+//	[dict setObject:[NSValue valueWithSize:size] forKey:NSViewSizeDocumentAttribute];
+//    }
+//    
+//    // TextEdit knows how to save all these types, including their super-types. It does not know how to save any of their potential subtypes. Hence, the conformance check is the reverse of the usual pattern.
+//    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+//    // kUTTypePlainText also handles kUTTypeText and has to come before the other types so we will use the least specialized type
+//    // For example, kUTTypeText is an ancestor of kUTTypeText and kUTTypeRTF but we should use kUTTypeText because kUTTypeText is an ancestor of kUTTypeRTF.
+//    if ([workspace type:(NSString *)kUTTypePlainText conformsToType:typeName]) docType = NSPlainTextDocumentType;
+//    else if ([workspace type:(NSString *)kUTTypeRTF conformsToType:typeName]) docType = NSRTFTextDocumentType;
+//    else if ([workspace type:(NSString *)kUTTypeRTFD conformsToType:typeName]) docType = NSRTFDTextDocumentType;
+//    else if ([workspace type:SimpleTextType conformsToType:typeName]) docType = NSMacSimpleTextDocumentType;
+//    else if ([workspace type:Word97Type conformsToType:typeName]) docType = NSDocFormatTextDocumentType;
+//    else if ([workspace type:Word2007Type conformsToType:typeName]) docType = NSOfficeOpenXMLTextDocumentType;
+//    else if ([workspace type:Word2003XMLType conformsToType:typeName]) docType = NSWordMLTextDocumentType;
+//    else if ([workspace type:OpenDocumentTextType conformsToType:typeName]) docType = NSOpenDocumentTextDocumentType;
+//    else if ([workspace type:(NSString *)kUTTypeHTML conformsToType:typeName]) docType = NSHTMLTextDocumentType;
+//    else if ([workspace type:(NSString *)kUTTypeWebArchive conformsToType:typeName]) docType = NSWebArchiveTextDocumentType;
+//    else [NSException raise:NSInvalidArgumentException format:@"%@ is not a recognized document type.", typeName];
+//    
+//    if (docType) [dict setObject:docType forKey:NSDocumentTypeDocumentAttribute];
+//    if ([self hasMultiplePages] && ([self scaleFactor] != 1.0)) [dict setObject:[NSNumber numberWithDouble:[self scaleFactor] * 100.0] forKey:NSViewZoomDocumentAttribute];
+//    if ((val = [self backgroundColor])) [dict setObject:val forKey:NSBackgroundColorDocumentAttribute];
+//    
+//    if (docType == NSPlainTextDocumentType) {
+//        enc = [self encoding];
+//        if ((currentSaveOperation == NSSaveOperation || currentSaveOperation == NSSaveAsOperation) && (documentEncodingForSaving != NoStringEncoding)) {
+//            enc = documentEncodingForSaving;
+//        }
+//        if (enc == NoStringEncoding) enc = [self suggestedDocumentEncoding];
+//        [dict setObject:[NSNumber numberWithUnsignedInteger:enc] forKey:NSCharacterEncodingDocumentAttribute];
+//    } else if (docType == NSHTMLTextDocumentType || docType == NSWebArchiveTextDocumentType) {
+//        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+//        NSMutableArray *excludedElements = [NSMutableArray array];
+//        if (![defaults boolForKey:UseXHTMLDocType]) [excludedElements addObject:@"XML"];
+//        if (![defaults boolForKey:UseTransitionalDocType]) [excludedElements addObjectsFromArray:[NSArray arrayWithObjects:@"APPLET", @"BASEFONT", @"CENTER", @"DIR", @"FONT", @"ISINDEX", @"MENU", @"S", @"STRIKE", @"U", nil]];
+//        if (![defaults boolForKey:UseEmbeddedCSS]) {
+//            [excludedElements addObject:@"STYLE"];
+//            if (![defaults boolForKey:UseInlineCSS]) [excludedElements addObject:@"SPAN"];
+//        }
+//        if (![defaults boolForKey:PreserveWhitespace]) {
+//            [excludedElements addObject:@"Apple-converted-space"];
+//            [excludedElements addObject:@"Apple-converted-tab"];
+//            [excludedElements addObject:@"Apple-interchange-newline"];
+//        }
+//        [dict setObject:excludedElements forKey:NSExcludedElementsDocumentAttribute];
+//        [dict setObject:[defaults objectForKey:HTMLEncoding] forKey:NSCharacterEncodingDocumentAttribute];
+//        [dict setObject:[NSNumber numberWithInteger:2] forKey:NSPrefixSpacesDocumentAttribute];
+//    }
+//        
+//    // Set the text layout orientation for each page
+//    if ((val = [[[self windowControllers] objectAtIndex:0] layoutOrientationSections])) [dict setObject:val forKey:NSTextLayoutSectionsAttribute];
+//
+//    // Set the document properties, generically, going through key value coding
+//    for (NSString *property in [self knownDocumentProperties]) {
+//	id value = [self valueForKey:property];
+//	if (value && ![value isEqual:@""] && ![value isEqual:[NSArray array]]) [dict setObject:value forKey:[[self documentPropertyToAttributeNameMappings] objectForKey:property]];
+//    }
+//    
+//    NSFileWrapper *result = nil;
+//    if (docType == NSRTFDTextDocumentType || (docType == NSPlainTextDocumentType && ![self isOpenedIgnoringRichText])) {	// We obtain a file wrapper from the text storage for RTFD (to produce a directory), or for true plain-text documents (to write out encoding in extended attributes)
+//        result = [text fileWrapperFromRange:range documentAttributes:dict error:outError]; // returns NSFileWrapper
+//    } else {
+//    	NSData *data = [text dataFromRange:range documentAttributes:dict error:outError]; // returns NSData
+//	if (data) {
+//	    result = [[[NSFileWrapper alloc] initRegularFileWithContents:data] autorelease];
+//	    if (!result && outError) *outError = [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil];    // Unlikely, but just in case we should generate an NSError
+//        }
+//    }
+//    if (result && docType == NSPlainTextDocumentType && (currentSaveOperation == NSSaveOperation || currentSaveOperation == NSSaveAsOperation)) {
+//        [self setEncoding:enc];
+//    }
+//    
+//    return result;
+//}
 
 - (BOOL)checkAutosavingSafetyAndReturnError:(NSError **)outError {
     BOOL safe = YES;
