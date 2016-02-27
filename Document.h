@@ -82,8 +82,6 @@
     
 }
 
-//- (BOOL)readFromURL:(NSURL *)absoluteURL ofType:(NSString *)typeName encoding:(NSStringEncoding)encoding ignoreRTF:(BOOL)ignoreRTF ignoreHTML:(BOOL)ignoreHTML error:(NSError **)outError;
-
 /* Is the document rich? */
 @property (readonly) BOOL isRichText;
 //- (BOOL)isRichText;
@@ -187,7 +185,9 @@
 
 
 // TEMP HACK TO EXPOSE TO SWIFT
+- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary;
 - (NSStringEncoding)suggestedDocumentEncoding;
+- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode;
 
  // Temporary information about document's desired file type
 @property (copy) NSString *fileTypeToSet;		/* Actual file type determined during a read, and set after the read (which includes revert) is complete. */

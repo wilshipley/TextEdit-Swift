@@ -1237,89 +1237,89 @@ In addition we overwrite this method as a way to tell that the document has been
 //    return result;
 //}
 
-- (BOOL)checkAutosavingSafetyAndReturnError:(NSError **)outError {
-    BOOL safe = YES;
-    if (![super checkAutosavingSafetyAndReturnError:outError]) return NO;
-    if ([self fileURL]) {
-        // If the document is converted or lossy but can't be saved in its file type, we will need to save it in a different location or duplicate it anyway.  Therefore, we should tell the user that a writable type is required instead.
-        if (![[self writableTypesForSaveOperation:NSSaveAsOperation ignoreTemporaryState:YES] containsObject:[self fileType]]) {
-            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorWritableTypeRequired];
-            safe = NO;
-        } else if ([self isConverted]) {
-            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorConvertedDocument];
-            safe = NO;
-        } else if ([self isLossy]) {
-            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorLossyDocument];
-            safe = NO;
-        } 
-    }
-    return safe;
-}
-
-/* For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup. 
-*/
-- (BOOL)shouldRunSavePanelWithAccessoryView {
-    return [self isRichText];
-}
-
-/* If the document is a converted version of a document that existed on disk, set the default directory to the directory in which the source file (converted file) resided at the time the document was converted. If the document is plain text, we additionally add an encoding popup. 
-*/
-- (BOOL)prepareSavePanel:(NSSavePanel *)savePanel {
-    NSPopUpButton *encodingPopup;
-    NSButton *extCheckbox;
-    NSUInteger cnt;
-    NSString *string;
-    
-    if (![self isRichText]) {
-	BOOL addExt = [[NSUserDefaults standardUserDefaults] boolForKey:AddExtensionToNewPlainTextFiles];
-	// If no encoding, figure out which encoding should be default in encoding popup, set as document encoding.
-	string = [textStorage string];
-	NSStringEncoding enc = [self encoding];
-	[self setEncodingForSaving:(enc == NoStringEncoding || ![string canBeConvertedToEncoding:enc]) ? [self suggestedDocumentEncoding] : enc];
-        NSView *accessoryView = [[[NSDocumentController sharedDocumentController] class] encodingAccessory:[self encodingForSaving] includeDefaultEntry:NO encodingPopUp:&encodingPopup checkBox:&extCheckbox];
-        accessoryView.translatesAutoresizingMaskIntoConstraints = NO;
-	[savePanel setAccessoryView:accessoryView];
-	
-	// Set up the checkbox
-	[extCheckbox setTitle:NSLocalizedString(@"If no extension is provided, use \\U201c.txt\\U201d.", @"Checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")];
-	[extCheckbox setToolTip:NSLocalizedString(@"Automatically append \\U201c.txt\\U201d to the file name if no known file name extension is provided.", @"Tooltip for checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")];
-	[extCheckbox setState:addExt];
-	[extCheckbox setAction:@selector(appendPlainTextExtensionChanged:)];
-	[extCheckbox setTarget:self];
-	if (addExt) {
-	    [savePanel setAllowedFileTypes:[NSArray arrayWithObject:(NSString *)kUTTypePlainText]];
-	    [savePanel setAllowsOtherFileTypes:YES];
-	} else {
-            // NSDocument defaults to setting the allowedFileType to kUTTypePlainText, which gives the fileName a ".txt" extension. We want don't want to append the extension for Untitled documents.
-            // First we clear out the allowedFileType that NSDocument set. We want to allow anything, so we pass 'nil'. This will prevent NSSavePanel from appending an extension.
-            [savePanel setAllowedFileTypes:nil];
-            // If this document was previously saved, use the URL's name.
-            NSString *fileName;
-            BOOL gotFileName = [[self fileURL] getResourceValue:&fileName forKey:NSURLNameKey error:nil];
-            // If the document has not yet been seaved, or we couldn't find the fileName, then use the displayName. 
-            if (!gotFileName || fileName == nil) {
-                fileName = [self displayName];
-            }
-            [savePanel setNameFieldStringValue:fileName];
-        }
-	
-	// Further set up the encoding popup
-	cnt = [encodingPopup numberOfItems];
-	if (cnt * [string length] < 5000000) {	// Otherwise it's just too slow; would be nice to make this more dynamic. With large docs and many encodings, the items just won't be validated.
-	    while (cnt--) {	// No reason go backwards except to use one variable instead of two
-                NSStringEncoding encoding = (NSStringEncoding)[[[encodingPopup itemAtIndex:cnt] representedObject] unsignedIntegerValue];
-		// Hardwire some encodings known to allow any content
-		if ((encoding != NoStringEncoding) && (encoding != NSUnicodeStringEncoding) && (encoding != NSUTF8StringEncoding) && (encoding != NSNonLossyASCIIStringEncoding) && ![string canBeConvertedToEncoding:encoding]) {
-		    [[encodingPopup itemAtIndex:cnt] setEnabled:NO];
-		}
-	    }
-	}
-	[encodingPopup setAction:@selector(encodingPopupChanged:)];
-	[encodingPopup setTarget:self];
-    }
-    
-    return YES;
-}
+//- (BOOL)checkAutosavingSafetyAndReturnError:(NSError **)outError {
+//    BOOL safe = YES;
+//    if (![super checkAutosavingSafetyAndReturnError:outError]) return NO;
+//    if ([self fileURL]) {
+//        // If the document is converted or lossy but can't be saved in its file type, we will need to save it in a different location or duplicate it anyway.  Therefore, we should tell the user that a writable type is required instead.
+//        if (![[self writableTypesForSaveOperation:NSSaveAsOperation ignoreTemporaryState:YES] containsObject:[self fileType]]) {
+//            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorWritableTypeRequired];
+//            safe = NO;
+//        } else if ([self isConverted]) {
+//            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorConvertedDocument];
+//            safe = NO;
+//        } else if ([self isLossy]) {
+//            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorLossyDocument];
+//            safe = NO;
+//        } 
+//    }
+//    return safe;
+//}
+//
+///* For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup. 
+//*/
+//- (BOOL)shouldRunSavePanelWithAccessoryView {
+//    return [self isRichText];
+//}
+//
+///* If the document is a converted version of a document that existed on disk, set the default directory to the directory in which the source file (converted file) resided at the time the document was converted. If the document is plain text, we additionally add an encoding popup. 
+//*/
+//- (BOOL)prepareSavePanel:(NSSavePanel *)savePanel {
+//    NSPopUpButton *encodingPopup;
+//    NSButton *extCheckbox;
+//    NSUInteger cnt;
+//    NSString *string;
+//    
+//    if (![self isRichText]) {
+//	BOOL addExt = [[NSUserDefaults standardUserDefaults] boolForKey:AddExtensionToNewPlainTextFiles];
+//	// If no encoding, figure out which encoding should be default in encoding popup, set as document encoding.
+//	string = [textStorage string];
+//	NSStringEncoding enc = [self encoding];
+//	[self setEncodingForSaving:(enc == NoStringEncoding || ![string canBeConvertedToEncoding:enc]) ? [self suggestedDocumentEncoding] : enc];
+//        NSView *accessoryView = [[[NSDocumentController sharedDocumentController] class] encodingAccessory:[self encodingForSaving] includeDefaultEntry:NO encodingPopUp:&encodingPopup checkBox:&extCheckbox];
+//        accessoryView.translatesAutoresizingMaskIntoConstraints = NO;
+//	[savePanel setAccessoryView:accessoryView];
+//	
+//	// Set up the checkbox
+//	[extCheckbox setTitle:NSLocalizedString(@"If no extension is provided, use \\U201c.txt\\U201d.", @"Checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")];
+//	[extCheckbox setToolTip:NSLocalizedString(@"Automatically append \\U201c.txt\\U201d to the file name if no known file name extension is provided.", @"Tooltip for checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")];
+//	[extCheckbox setState:addExt];
+//	[extCheckbox setAction:@selector(appendPlainTextExtensionChanged:)];
+//	[extCheckbox setTarget:self];
+//	if (addExt) {
+//	    [savePanel setAllowedFileTypes:[NSArray arrayWithObject:(NSString *)kUTTypePlainText]];
+//	    [savePanel setAllowsOtherFileTypes:YES];
+//	} else {
+//            // NSDocument defaults to setting the allowedFileType to kUTTypePlainText, which gives the fileName a ".txt" extension. We want don't want to append the extension for Untitled documents.
+//            // First we clear out the allowedFileType that NSDocument set. We want to allow anything, so we pass 'nil'. This will prevent NSSavePanel from appending an extension.
+//            [savePanel setAllowedFileTypes:nil];
+//            // If this document was previously saved, use the URL's name.
+//            NSString *fileName;
+//            BOOL gotFileName = [[self fileURL] getResourceValue:&fileName forKey:NSURLNameKey error:nil];
+//            // If the document has not yet been seaved, or we couldn't find the fileName, then use the displayName. 
+//            if (!gotFileName || fileName == nil) {
+//                fileName = [self displayName];
+//            }
+//            [savePanel setNameFieldStringValue:fileName];
+//        }
+//	
+//	// Further set up the encoding popup
+//	cnt = [encodingPopup numberOfItems];
+//	if (cnt * [string length] < 5000000) {	// Otherwise it's just too slow; would be nice to make this more dynamic. With large docs and many encodings, the items just won't be validated.
+//	    while (cnt--) {	// No reason go backwards except to use one variable instead of two
+//                NSStringEncoding encoding = (NSStringEncoding)[[[encodingPopup itemAtIndex:cnt] representedObject] unsignedIntegerValue];
+//		// Hardwire some encodings known to allow any content
+//		if ((encoding != NoStringEncoding) && (encoding != NSUnicodeStringEncoding) && (encoding != NSUTF8StringEncoding) && (encoding != NSNonLossyASCIIStringEncoding) && ![string canBeConvertedToEncoding:encoding]) {
+//		    [[encodingPopup itemAtIndex:cnt] setEnabled:NO];
+//		}
+//	    }
+//	}
+//	[encodingPopup setAction:@selector(encodingPopupChanged:)];
+//	[encodingPopup setTarget:self];
+//    }
+//    
+//    return YES;
+//}
 
 @end
 

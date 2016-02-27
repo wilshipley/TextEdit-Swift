@@ -12,6 +12,8 @@ public extension Document {
     
     // MARK: NSDocument
     
+    override public var shouldRunSavePanelWithAccessoryView: Bool { return isRichText } // For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup.
+
     override public func fileWrapperOfType(typeName: String) throws -> NSFileWrapper { // Returns an object that represents the document to be written to file.
         
         var documentAttributes: [String : AnyObject] = [
@@ -138,7 +140,6 @@ public extension Document {
         return fileWrapper
     }
 
-    
     override public func saveToURL(url: NSURL, ofType typeName: String, forSaveOperation saveOperation: NSSaveOperationType, completionHandler: (NSError?) -> Void) {
         /* When we save, we send a notification so that views that are currently coalescing undo actions can break that. This is done for two reasons, one technical and the other HI oriented.
         
@@ -162,8 +163,88 @@ public extension Document {
         }
     }
 
+    override public func checkAutosavingSafety() throws {
+        try super.checkAutosavingSafety()
+
+        if fileURL == nil {
+            return
+        }
+        // If the document is converted or lossy but can't be saved in its file type, we will need to save it in a different location or duplicate it anyway.  Therefore, we should tell the user that a writable type is required instead.
+        if fileType != nil && (writableTypesForSaveOperation(.SaveAsOperation, ignoreTemporaryState: true) as! [String]).indexOf(fileType!) == nil {
+           throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
+        } else if converted {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorConvertedDocument)
+        } else if lossy {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorLossyDocument)
+        }
+    }
     
+    override public func prepareSavePanel(savePanel: NSSavePanel) -> Bool {
+        // If the document is a converted version of a document that existed on disk, set the default directory to the directory in which the source file (converted file) resided at the time the document was converted. If the document is plain text, we additionally add an encoding popup.
+        if isRichText {
+            return true
+        }
+        
+        let addExtensionToNewPlainTextFiles = NSUserDefaults.standardUserDefaults().boolForKey(AddExtensionToNewPlainTextFiles)
+        // If no encoding, figure out which encoding should be default in encoding popup, set as document encoding.
+        let string = textStorage.string
+        encodingForSaving = (encoding == UInt(NoStringEncoding) || !string.canBeConvertedToEncoding(encoding)) ? suggestedDocumentEncoding() : encoding
+        
+        var encodingPopup: NSPopUpButton?
+        var extensionCheckbox: NSButton?
+        let accessoryView = DocumentController.encodingAccessory(encodingForSaving, includeDefaultEntry: false, encodingPopUp: &encodingPopup, checkBox: &extensionCheckbox)
+        accessoryView.translatesAutoresizingMaskIntoConstraints = false
+        savePanel.accessoryView = accessoryView
+        
+        // Set up the checkbox
+        extensionCheckbox?.title = NSLocalizedString("If no extension is provided, use \\U201c.txt\\U201d.", comment: "Checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")
+        extensionCheckbox?.toolTip = NSLocalizedString("Automatically append \\U201c.txt\\U201d to the file name if no known file name extension is provided.", comment: "Tooltip for checkbox indicating that if the user does not specify an extension when saving a plain text file, .txt will be used")
+        extensionCheckbox?.state = addExtensionToNewPlainTextFiles ? 1 : 0
+        extensionCheckbox?.action = "appendPlainTextExtensionChanged:"
+        extensionCheckbox?.target = self
+        
+        if (addExtensionToNewPlainTextFiles) {
+            savePanel.allowedFileTypes = [kUTTypePlainText as String]
+            savePanel.allowsOtherFileTypes = true
+        } else {
+            // NSDocument defaults to setting the allowedFileType to kUTTypePlainText, which gives the fileName a ".txt" extension. We want don't want to append the extension for Untitled documents.
+            // First we clear out the allowedFileType that NSDocument set. We want to allow anything, so we pass 'nil'. This will prevent NSSavePanel from appending an extension.
+            //    [savePanel setAllowedFileTypes:nil];
+            // If this document was previously saved, use the URL's name.
+            var fileName: AnyObject?
+            if let fileURL = fileURL {
+                do {
+                    try fileURL.getResourceValue(&fileName, forKey:NSURLNameKey)
+                }
+                catch { }
+            }
+            // If the document has not yet been saved, or we couldn't find the fileName, then use the displayName.
+            savePanel.nameFieldStringValue = (fileName as? String) ?? displayName
+        }
+        
+        // Further set up the encoding popup
+        if encodingPopup != nil && encodingPopup!.numberOfItems * string.characters.count < 5000000 {	// Otherwise it's just too slow; would be nice to make this more dynamic. With large docs and many encodings, the items just won't be validated.
+            for itemIndex in 0 ..< encodingPopup!.numberOfItems {
+                // NOTE: the last two items in the popup are NOT string encodings, they are a separator and a "Customize..." item, so we don't want to iterate over them
+                if let menuItem = encodingPopup!.itemAtIndex(itemIndex), let menuItemStringEncoding = (menuItem.representedObject?.unsignedIntegerValue as NSStringEncoding?) {
+                    switch menuItemStringEncoding {
+                    case UInt(NoStringEncoding), NSUnicodeStringEncoding, NSUTF8StringEncoding, NSNonLossyASCIIStringEncoding: // Hardwire some encodings known to allow any content
+                        menuItem.enabled = true
+                    case let convertableEncoding where string.canBeConvertedToEncoding(convertableEncoding):
+                        menuItem.enabled = true
+                    default:
+                        menuItem.enabled = false
+                    }
+                }
+            }
+        }
+        encodingPopup?.action = "encodingPopupChanged:"
+        encodingPopup?.target = self
     
+        return true
+    }
+
+
     // MARK: internal methods
     func readFromURL(url: NSURL, ofType typeName: String, encoding desiredEncoding: NSStringEncoding, ignoreRTF: Bool, ignoreHTML: Bool) throws {
         var options = [String : AnyObject]()
