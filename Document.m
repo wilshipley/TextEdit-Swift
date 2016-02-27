@@ -115,7 +115,7 @@ NSString *OpenDocumentTextType = @"org.oasis-open.opendocument.text";
 	[self setEncodingForSaving:NoStringEncoding];
 	[self setScaleFactor:1.0];
 	[self setDocumentPropertiesToDefaults];
-	inDuplicate = NO;
+//	inDuplicate = NO;
         
 	// Assume the default file type for now, since -initWithType:error: does not currently get called when creating documents using AppleScript. (4165700)
 	[self setFileType:[[NSDocumentController sharedDocumentController] defaultType]];
@@ -902,81 +902,81 @@ In addition we overwrite this method as a way to tell that the document has been
     return [[self class] canConcurrentlyReadDocumentsOfType:typeName];
 }
 
-- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode {
-    switch (errorCode) {
-        case TextEditSaveErrorWritableTypeRequired: {
-            NSString *description, *recoverySuggestion;
-            /* the document can't be saved in its original format, either because TextEdit cannot write to the format, or TextEdit cannot write documents containing
-                attachments to the format. */
-            if ([textStorage containsAttachments]) {
-                description = NSLocalizedString(@"Convert this document to RTFD format?",
-                                                    @"Title of alert panel prompting the user to convert to RTFD.");
-                recoverySuggestion = NSLocalizedString(
-                                                @"Documents with graphics and attachments will be saved using RTFD (RTF with graphics) format. RTFD documents are not compatible with some applications. Convert anyway?",
-                                                @"Contents of alert panel prompting the user to convert to RTFD.");
-            } else {
-                description = NSLocalizedString(@"Convert this document to RTF format?",
-                                @"Title of alert panel prompting the user to convert to RTF.");
-                recoverySuggestion = NSLocalizedString(@"This document must be converted to RTF before it can be modified.",
-                                        @"Contents of alert panel prompting the user to convert to RTF.");
-            }
-            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorWritableTypeRequired userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                description, NSLocalizedDescriptionKey,
-                recoverySuggestion, NSLocalizedRecoverySuggestionErrorKey,
-                [NSArray arrayWithObjects:
-                    NSLocalizedString(@"Convert", @"Button choice that allows the user to convert the document."),
-                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
-                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document.")
-                , nil], NSLocalizedRecoveryOptionsErrorKey,
-                self, NSRecoveryAttempterErrorKey,
-                nil]];
-        }
-        case TextEditSaveErrorConvertedDocument: {
-            NSString *newFormatName = [textStorage containsAttachments] ? NSLocalizedString(@"rich text with graphics (RTFD)", @"Rich text with graphics file format name, displayed in alert") 
-                                      : NSLocalizedString(@"rich text", @"Rich text file format name, displayed in alert");
-            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorConvertedDocument userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                        NSLocalizedString(
-                            @"Are you sure you want to edit this document?",
-                            @"Title of alert panel asking the user whether he wants to edit a converted document."), NSLocalizedDescriptionKey,
-                [NSString stringWithFormat:NSLocalizedString(@"This document was converted from a format that TextEdit cannot save. It will be saved in %@ format.",
-                            @"Contents of alert panel informing user that the document is converted and cannot be written in its original format."), newFormatName], NSLocalizedRecoverySuggestionErrorKey, 
-                [NSArray arrayWithObjects:
-                    NSLocalizedString(@"Edit", @"Button choice that allows the user to save the document."),
-                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
-                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document.")
-                    , nil], NSLocalizedRecoveryOptionsErrorKey,
-                self, NSRecoveryAttempterErrorKey,
-                nil]];
-        }
-        case TextEditSaveErrorLossyDocument: {
-            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorLossyDocument userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                NSLocalizedString(@"Are you sure you want to modify the document in place?", @"Title of alert panel which brings up a warning about saving over the same document"), NSLocalizedDescriptionKey,
-                NSLocalizedString(@"Modifying the document in place might cause you to lose some of the original formatting.  Would you like to duplicate the document first?", @"Contents of alert panel informing user that they need to supply a new file name because the save might be lossy"), NSLocalizedRecoverySuggestionErrorKey,
-                [NSArray arrayWithObjects:
-                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document."),
-                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
-                    NSLocalizedString(@"Overwrite", @"Button choice allowing user to overwrite the document."), nil], NSLocalizedRecoveryOptionsErrorKey,
-                self, NSRecoveryAttempterErrorKey,
-                nil]];
-        }
-        case TextEditSaveErrorEncodingInapplicable: {
-            NSUInteger enc = [self encodingForSaving];
-            if (enc == NoStringEncoding) enc = [self encoding];
-            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorEncodingInapplicable userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
-                        [NSString stringWithFormat:NSLocalizedString(@"This document can no longer be saved using its original %@ encoding.", @"Title of alert panel informing user that the file's string encoding needs to be changed."), [NSString localizedNameOfStringEncoding:enc]], NSLocalizedDescriptionKey,
-                        NSLocalizedString(@"Please choose another encoding (such as UTF-8).", @"Subtitle of alert panel informing user that the file's string encoding needs to be changed"), NSLocalizedRecoverySuggestionErrorKey,
-                        NSLocalizedString(@"The specified text encoding isn\\U2019t applicable.",
-                            @"Failure reason stating that the text encoding is not applicable."), NSLocalizedFailureReasonErrorKey,
-                        [NSArray arrayWithObjects:
-                            NSLocalizedString(@"OK", @"OK"),
-                            NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."), nil], NSLocalizedRecoveryOptionsErrorKey,
-                        self, NSRecoveryAttempterErrorKey,
-                        nil]];
-        }
-        
-    }
-    return nil;
-}
+//- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode {
+//    switch (errorCode) {
+//        case TextEditSaveErrorWritableTypeRequired: {
+//            NSString *description, *recoverySuggestion;
+//            /* the document can't be saved in its original format, either because TextEdit cannot write to the format, or TextEdit cannot write documents containing
+//                attachments to the format. */
+//            if ([textStorage containsAttachments]) {
+//                description = NSLocalizedString(@"Convert this document to RTFD format?",
+//                                                    @"Title of alert panel prompting the user to convert to RTFD.");
+//                recoverySuggestion = NSLocalizedString(
+//                                                @"Documents with graphics and attachments will be saved using RTFD (RTF with graphics) format. RTFD documents are not compatible with some applications. Convert anyway?",
+//                                                @"Contents of alert panel prompting the user to convert to RTFD.");
+//            } else {
+//                description = NSLocalizedString(@"Convert this document to RTF format?",
+//                                @"Title of alert panel prompting the user to convert to RTF.");
+//                recoverySuggestion = NSLocalizedString(@"This document must be converted to RTF before it can be modified.",
+//                                        @"Contents of alert panel prompting the user to convert to RTF.");
+//            }
+//            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorWritableTypeRequired userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+//                description, NSLocalizedDescriptionKey,
+//                recoverySuggestion, NSLocalizedRecoverySuggestionErrorKey,
+//                [NSArray arrayWithObjects:
+//                    NSLocalizedString(@"Convert", @"Button choice that allows the user to convert the document."),
+//                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
+//                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document.")
+//                , nil], NSLocalizedRecoveryOptionsErrorKey,
+//                self, NSRecoveryAttempterErrorKey,
+//                nil]];
+//        }
+//        case TextEditSaveErrorConvertedDocument: {
+//            NSString *newFormatName = [textStorage containsAttachments] ? NSLocalizedString(@"rich text with graphics (RTFD)", @"Rich text with graphics file format name, displayed in alert") 
+//                                      : NSLocalizedString(@"rich text", @"Rich text file format name, displayed in alert");
+//            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorConvertedDocument userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+//                        NSLocalizedString(
+//                            @"Are you sure you want to edit this document?",
+//                            @"Title of alert panel asking the user whether he wants to edit a converted document."), NSLocalizedDescriptionKey,
+//                [NSString stringWithFormat:NSLocalizedString(@"This document was converted from a format that TextEdit cannot save. It will be saved in %@ format.",
+//                            @"Contents of alert panel informing user that the document is converted and cannot be written in its original format."), newFormatName], NSLocalizedRecoverySuggestionErrorKey, 
+//                [NSArray arrayWithObjects:
+//                    NSLocalizedString(@"Edit", @"Button choice that allows the user to save the document."),
+//                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
+//                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document.")
+//                    , nil], NSLocalizedRecoveryOptionsErrorKey,
+//                self, NSRecoveryAttempterErrorKey,
+//                nil]];
+//        }
+//        case TextEditSaveErrorLossyDocument: {
+//            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorLossyDocument userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+//                NSLocalizedString(@"Are you sure you want to modify the document in place?", @"Title of alert panel which brings up a warning about saving over the same document"), NSLocalizedDescriptionKey,
+//                NSLocalizedString(@"Modifying the document in place might cause you to lose some of the original formatting.  Would you like to duplicate the document first?", @"Contents of alert panel informing user that they need to supply a new file name because the save might be lossy"), NSLocalizedRecoverySuggestionErrorKey,
+//                [NSArray arrayWithObjects:
+//                    NSLocalizedString(@"Duplicate", @"Button choice that allows the user to duplicate the document."),
+//                    NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."),
+//                    NSLocalizedString(@"Overwrite", @"Button choice allowing user to overwrite the document."), nil], NSLocalizedRecoveryOptionsErrorKey,
+//                self, NSRecoveryAttempterErrorKey,
+//                nil]];
+//        }
+//        case TextEditSaveErrorEncodingInapplicable: {
+//            NSUInteger enc = [self encodingForSaving];
+//            if (enc == NoStringEncoding) enc = [self encoding];
+//            return [NSError errorWithDomain:TextEditErrorDomain code:TextEditSaveErrorEncodingInapplicable userInfo:[NSDictionary dictionaryWithObjectsAndKeys:
+//                        [NSString stringWithFormat:NSLocalizedString(@"This document can no longer be saved using its original %@ encoding.", @"Title of alert panel informing user that the file's string encoding needs to be changed."), [NSString localizedNameOfStringEncoding:enc]], NSLocalizedDescriptionKey,
+//                        NSLocalizedString(@"Please choose another encoding (such as UTF-8).", @"Subtitle of alert panel informing user that the file's string encoding needs to be changed"), NSLocalizedRecoverySuggestionErrorKey,
+//                        NSLocalizedString(@"The specified text encoding isn\\U2019t applicable.",
+//                            @"Failure reason stating that the text encoding is not applicable."), NSLocalizedFailureReasonErrorKey,
+//                        [NSArray arrayWithObjects:
+//                            NSLocalizedString(@"OK", @"OK"),
+//                            NSLocalizedString(@"Cancel", @"Button choice that allows the user to cancel."), nil], NSLocalizedRecoveryOptionsErrorKey,
+//                        self, NSRecoveryAttempterErrorKey,
+//                        nil]];
+//        }
+//        
+//    }
+//    return nil;
+//}
 
 - (BOOL)checkAutosavingSafetyAfterChangeAndReturnError:(NSError **)outError {
     BOOL safe = YES;
@@ -1047,25 +1047,25 @@ In addition we overwrite this method as a way to tell that the document has been
     }
 }
 
-- (NSString *)autosavingFileType {
-    if (inDuplicate) {
-        if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]])
-            return (NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF);
-    }
-    return [super autosavingFileType];
-}
+//- (NSString *)autosavingFileType {
+//    if (inDuplicate) {
+//        if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]])
+//            return (NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF);
+//    }
+//    return [super autosavingFileType];
+//}
 
-/* When we duplicate a document, we need to temporarily return the autosaving file type for the
-    resultant document.  Unfortunately, the only way to do this from a document subclass appears
-    to be to use a boolean indicator.
- */
-- (NSDocument *)duplicateAndReturnError:(NSError **)outError {
-    NSDocument *result;
-    inDuplicate = YES;
-    result = [super duplicateAndReturnError:outError];
-    inDuplicate = NO;
-    return result;
-}
+///* When we duplicate a document, we need to temporarily return the autosaving file type for the
+//    resultant document.  Unfortunately, the only way to do this from a document subclass appears
+//    to be to use a boolean indicator.
+// */
+//- (NSDocument *)duplicateAndReturnError:(NSError **)outError {
+//    NSDocument *result;
+//    inDuplicate = YES;
+//    result = [super duplicateAndReturnError:outError];
+//    inDuplicate = NO;
+//    return result;
+//}
 
 - (void)document:(NSDocument *)ignored didSave:(BOOL)didSave block:(void (^)(BOOL))block {
     block(didSave);

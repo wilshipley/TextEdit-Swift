@@ -52,7 +52,6 @@
 @interface Document : NSDocument {
     // Book-keeping
     BOOL setUpPrintInfoDefaults;	/* YES the first time -printInfo is called */
-    BOOL inDuplicate;
     // Document data
     NSTextStorage *textStorage;		/* The (styled) text content of the document */
     CGFloat scaleFactor;		/* The scale factor retreived from file */
@@ -184,10 +183,16 @@
 //- (void)setUsesScreenFonts:(BOOL)aFlag;
 
 
+
+
 // TEMP HACK TO EXPOSE TO SWIFT
+// THESE SHOULD BE INTERNAL:
+@property BOOL inDuplicate;
+
+
 - (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary;
 - (NSStringEncoding)suggestedDocumentEncoding;
-- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode;
+//- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode;
 
  // Temporary information about document's desired file type
 @property (copy) NSString *fileTypeToSet;		/* Actual file type determined during a read, and set after the read (which includes revert) is complete. */
