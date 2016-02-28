@@ -10,8 +10,68 @@ import Cocoa
 
 public extension Document {
     
+    //
     // MARK: NSDocument
+    //
     
+    override public func updateChangeCount(change: NSDocumentChangeType) {
+
+        transient = false // when a document is changed, it ceases to be transient.
+      
+        super.updateChangeCount(change)
+        
+        guard change == .ChangeDone || change == .ChangeRedone else {
+            return
+        }
+        
+        if fileURL == nil {
+            // If we don't have a file URL, we can change our backing store type without consulting the user.
+            // NSDocument will update the extension of our autosaving location.
+            // If we don't do this, we won't be able to store images in autosaved untitled documents.
+            if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
+                fileType = textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
+            }
+            return
+        }
+        
+        do {
+            try checkAutosavingSafetyAfterChange()
+        }
+        catch let error as NSError {
+            if windowForSheet != nil {
+                performActivityWithSynchronousWaiting(true) { activityCompletionHandler in
+                    
+                    Document.recoverBlock = { didRecover in
+                        if !didRecover {
+                            self.undoManager?.undo()
+                        }
+                        activityCompletionHandler()
+                    }
+                    
+                    self.presentError(error,
+                        modalForWindow: self.windowForSheet!,
+                        delegate: self,
+                        didPresentSelector: "didPresentErrorWithRecovery:contextInfo:",
+                        contextInfo: nil
+                    )
+                }
+            } else {
+                if !presentError(error) {
+                    undoManager?.undo()
+                }
+            }
+        }
+    }
+    // FIXME: make this NOT static when this file is no longer a temporary "exension" to Document
+    private static var recoverBlock: ((Bool) -> Void)? = nil
+    public func didPresentErrorWithRecovery(didRecover: Bool, contextInfo: UnsafeMutablePointer<Void>) {
+        Document.recoverBlock?(didRecover)
+        Document.recoverBlock = nil
+    }
+
+
+    
+    // reading and writing to disk
     override public var shouldRunSavePanelWithAccessoryView: Bool { return isRichText } // For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup.
 
     override public func fileWrapperOfType(typeName: String) throws -> NSFileWrapper { // Returns an object that represents the document to be written to file.
@@ -259,7 +319,9 @@ public extension Document {
     }
 
     
-    // MARK: internal methods
+    //
+    // MARK: private methods
+    //
     func readFromURL(url: NSURL, ofType typeName: String, encoding desiredEncoding: NSStringEncoding, ignoreRTF: Bool, ignoreHTML: Bool) throws {
         var options = [String : AnyObject]()
         
@@ -486,9 +548,22 @@ public extension Document {
         }
     }
 
+    func checkAutosavingSafetyAfterChange() throws {
+        guard fileURL != nil else { // if the document isn't saved, don't complain about limitations of its supposed backing store.
+            return
+        }
+        
+        if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
+        } else if !isRichText {
+            if encoding != UInt(NoStringEncoding) && !textStorage.string.canBeConvertedToEncoding(encoding) {
+                throw errorInTextEditDomainWithCode(TextEditSaveErrorEncodingInapplicable)
+            }
+        }
+    }
+
     
-    // MARK: private methods
-    internal class func readableTypeForType(type: String) -> String? {
+    private class func readableTypeForType(type: String) -> String? {
         // There is a partial order on readableTypes given by UTTypeConformsTo. We linearly extend the partial order to a total order using <.
         // Therefore we can compute the ancestor with greatest level (furthest from root) by linear search in the resulting array.
         // Why do we have to do this?  Because type might conform to multiple readable types, such as "public.rtf" and "public.text" and "public.data"
@@ -507,17 +582,19 @@ public extension Document {
         return typeName != (kUTTypeText as String)
     }
     
-
-//    // MARK: private properties
+    //
+    // MARK: private properties
+    //
+    
 //    private var currentSaveOperation: NSSaveOperationType? // So we can know whether to use documentEncodingForSaving or documentEncoding in -fileWrapperOfType:error:
-
     
     
-    
+    //
     // MARK: private static properties
-
-    // Document properties management
-    private static let documentPropertyToAttributeNameMappings: [String : String] = [ // Table mapping document property keys "company", etc, to text system document attribute keys (NSCompanyDocumentAttribute, etc)
+    //
+    
+    // Table mapping document property keys "company", etc, to text system document attribute keys (NSCompanyDocumentAttribute, etc)
+    private static let documentPropertyToAttributeNameMappings: [String : String] = [
         "company": NSCompanyDocumentAttribute,
         "author": NSAuthorDocumentAttribute,
         "keywords": NSKeywordsDocumentAttribute,

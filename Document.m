@@ -978,74 +978,74 @@ In addition we overwrite this method as a way to tell that the document has been
 //    return nil;
 //}
 
-- (BOOL)checkAutosavingSafetyAfterChangeAndReturnError:(NSError **)outError {
-    BOOL safe = YES;
-	// it the document isn't saved, don't complain about limitations of its supposed backing store.
-	if ([self fileURL]) {
-    	if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]]) {
-	        if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorWritableTypeRequired];
-	        safe = NO;
-	    } else if (![self isRichText]) {
-	        NSUInteger encoding = [self encoding];
-	        if (encoding != NoStringEncoding && ![[textStorage string] canBeConvertedToEncoding:encoding]) {
-	            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorEncodingInapplicable];
-	            safe = NO;
-	        }
-	    }
-	}
-    return safe;
-}
+//- (BOOL)checkAutosavingSafetyAfterChangeAndReturnError:(NSError **)outError {
+//    BOOL safe = YES;
+//	// it the document isn't saved, don't complain about limitations of its supposed backing store.
+//	if ([self fileURL]) {
+//    	if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]]) {
+//	        if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorWritableTypeRequired];
+//	        safe = NO;
+//	    } else if (![self isRichText]) {
+//	        NSUInteger encoding = [self encoding];
+//	        if (encoding != NoStringEncoding && ![[textStorage string] canBeConvertedToEncoding:encoding]) {
+//	            if (outError) *outError = [self errorInTextEditDomainWithCode:TextEditSaveErrorEncodingInapplicable];
+//	            safe = NO;
+//	        }
+//	    }
+//	}
+//    return safe;
+//}
 
-- (void)updateChangeCount:(NSDocumentChangeType)change {
-    NSError *error;
-    
-    // When a document is changed, it ceases to be transient.
-    [self setTransient:NO];
-    
-	[super updateChangeCount:change];
-
-    if (change == NSChangeDone || change == NSChangeRedone) {
-        // If we don't have a file URL, we can change our backing store type without consulting the user.
-        // NSDocument will update the extension of our autosaving location.
-        // If we don't do this, we won't be able to store images in autosaved untitled documents.
-        if (![self fileURL]) {
-            if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]]) {
-                [self setFileType:(NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF)];
-            }
-        } else if (![self checkAutosavingSafetyAfterChangeAndReturnError:&error]) {
-            void (^didRecoverBlock)(BOOL) = ^(BOOL didRecover) {
-                if (!didRecover) {
-                    if (change == NSChangeDone || change == NSChangeRedone) {
-                        [[self undoManager] undo];
-                    } else if (change == NSChangeUndone) {
-                        [[self undoManager] redo];
-                    }
-                }
-            };
-            NSWindow *sheetWindow = [self windowForSheet];
-            if (sheetWindow) {
-                [self performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)()) {
-                [self presentError:error
-                        modalForWindow:sheetWindow
-                        delegate:self
-                        didPresentSelector:@selector(didPresentErrorWithRecovery:block:)
-                           contextInfo:Block_copy(^(BOOL didRecover) {
-                               if (!didRecover) {
-                                   if (change == NSChangeDone || change == NSChangeRedone) {
-                                       [[self undoManager] undo];
-                                   } else if (change == NSChangeUndone) {
-                                       [[self undoManager] redo];
-                                   }
-                               }
-                               activityCompletionHandler();
-                           })];
-                }];
-            } else {
-                didRecoverBlock([self presentError:error]);
-            }
-        }
-    }
-}
+//- (void)updateChangeCount:(NSDocumentChangeType)change {
+//    NSError *error;
+//    
+//    // When a document is changed, it ceases to be transient.
+//    [self setTransient:NO];
+//    
+//	[super updateChangeCount:change];
+//
+//    if (change == NSChangeDone || change == NSChangeRedone) {
+//        // If we don't have a file URL, we can change our backing store type without consulting the user.
+//        // NSDocument will update the extension of our autosaving location.
+//        // If we don't do this, we won't be able to store images in autosaved untitled documents.
+//        if (![self fileURL]) {
+//            if (![[self writableTypesForSaveOperation:NSSaveAsOperation] containsObject:[self fileType]]) {
+//                [self setFileType:(NSString *)([textStorage containsAttachments] ? kUTTypeRTFD : kUTTypeRTF)];
+//            }
+//        } else if (![self checkAutosavingSafetyAfterChangeAndReturnError:&error]) {
+//            void (^didRecoverBlock)(BOOL) = ^(BOOL didRecover) {
+//                if (!didRecover) {
+//                    if (change == NSChangeDone || change == NSChangeRedone) {
+//                        [[self undoManager] undo];
+//                    } else if (change == NSChangeUndone) {
+//                        [[self undoManager] redo];
+//                    }
+//                }
+//            };
+//            NSWindow *sheetWindow = [self windowForSheet];
+//            if (sheetWindow) {
+//                [self performActivityWithSynchronousWaiting:YES usingBlock:^(void (^activityCompletionHandler)()) {
+//                [self presentError:error
+//                        modalForWindow:sheetWindow
+//                        delegate:self
+//                        didPresentSelector:@selector(didPresentErrorWithRecovery:block:)
+//                           contextInfo:Block_copy(^(BOOL didRecover) {
+//                               if (!didRecover) {
+//                                   if (change == NSChangeDone || change == NSChangeRedone) {
+//                                       [[self undoManager] undo];
+//                                   } else if (change == NSChangeUndone) {
+//                                       [[self undoManager] redo];
+//                                   }
+//                               }
+//                               activityCompletionHandler();
+//                           })];
+//                }];
+//            } else {
+//                didRecoverBlock([self presentError:error]);
+//            }
+//        }
+//    }
+//}
 
 //- (NSString *)autosavingFileType {
 //    if (inDuplicate) {
@@ -1072,10 +1072,12 @@ In addition we overwrite this method as a way to tell that the document has been
     Block_release(block);
 }
 
-- (void)didPresentErrorWithRecovery:(BOOL)didRecover block:(void (^)(BOOL))block {
-    block(didRecover);
-    Block_release(block);
-}
+//- (void)didPresentErrorWithRecovery:(BOOL)didRecover block:(void (^)(BOOL))block {
+//    block(didRecover);
+//    Block_release(block);
+//}
+
+// MARK: NSObject(NSErrorRecoveryAttempting)
 
 - (void)attemptRecoveryFromError:(NSError *)error optionIndex:(NSUInteger)recoveryOptionIndex delegate:(id)delegate didRecoverSelector:(SEL)didRecoverSelector contextInfo:(void *)contextInfo {
     BOOL didRecover = NO;
