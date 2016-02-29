@@ -829,14 +829,14 @@ CGFloat defaultTextPadding(void) {
 
 @implementation Document (TextEditNSDocumentOverrides)
 
-+ (BOOL)autosavesInPlace {
-    return YES;
-}
-
-+ (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName {
-    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
-    return !([workspace type:typeName conformsToType:(NSString *)kUTTypeHTML] || [workspace type:typeName conformsToType:(NSString *)kUTTypeWebArchive]);
-}
+//+ (BOOL)autosavesInPlace {
+//    return YES;
+//}
+//
+//+ (BOOL)canConcurrentlyReadDocumentsOfType:(NSString *)typeName {
+//    NSWorkspace *workspace = [NSWorkspace sharedWorkspace];
+//    return !([workspace type:typeName conformsToType:(NSString *)kUTTypeHTML] || [workspace type:typeName conformsToType:(NSString *)kUTTypeWebArchive]);
+//}
 
 - (void)makeWindowControllers {
     NSArray *myControllers = [self windowControllers];
@@ -847,28 +847,28 @@ CGFloat defaultTextPadding(void) {
     }
 }
 
-/* One of the determinants of whether a file is locked is whether its type is one of our writable types. However, the writable types are a function of whether the document contains attachments. But whether we are locked cannot be a function of whether the document contains attachments, because we won't be asked to redetermine autosaving safety after an undo operation resulting from a cancel, so the document would continue to appear locked if an image were dragged in and then cancel was pressed.  Therefore, we must use an "ignoreTemporary" boolean to treat RTF as temporarily writable despite the attachments.  That's fine since -checkAutosavingSafetyAfterChangeAndReturnError: will perform this check again with ignoreTemporary set to NO, and that method will be called when the operation is done and undone, so no inconsistency results. 
-*/
-- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary {
-    NSMutableArray *outArray = [[[[self class] writableTypes] mutableCopy] autorelease];
-    if (saveOperation == NSSaveAsOperation) {
-	// Rich-text documents cannot be saved as plain text.
-	if ([self isRichText]) {
-	    [outArray removeObject:(NSString *)kUTTypeText];
-	    [outArray removeObject:(NSString *)kUTTypePlainText];
-	}
-	
-	// Documents that contain attachments can only be saved in formats that support embedded graphics.
-	if (!ignoreTemporary && [textStorage containsAttachments]) {
-	    [outArray setArray:[NSArray arrayWithObjects:(NSString *)kUTTypeRTFD, (NSString *)kUTTypeWebArchive, nil]];
-	}
-    }
-    return outArray;
-}
-
-- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation {
-	return [self writableTypesForSaveOperation:saveOperation ignoreTemporaryState:NO];
-}
+///* One of the determinants of whether a file is locked is whether its type is one of our writable types. However, the writable types are a function of whether the document contains attachments. But whether we are locked cannot be a function of whether the document contains attachments, because we won't be asked to redetermine autosaving safety after an undo operation resulting from a cancel, so the document would continue to appear locked if an image were dragged in and then cancel was pressed.  Therefore, we must use an "ignoreTemporary" boolean to treat RTF as temporarily writable despite the attachments.  That's fine since -checkAutosavingSafetyAfterChangeAndReturnError: will perform this check again with ignoreTemporary set to NO, and that method will be called when the operation is done and undone, so no inconsistency results. 
+//*/
+//- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary {
+//    NSMutableArray *outArray = [[[[self class] writableTypes] mutableCopy] autorelease];
+//    if (saveOperation == NSSaveAsOperation) {
+//	// Rich-text documents cannot be saved as plain text.
+//	if ([self isRichText]) {
+//	    [outArray removeObject:(NSString *)kUTTypeText];
+//	    [outArray removeObject:(NSString *)kUTTypePlainText];
+//	}
+//	
+//	// Documents that contain attachments can only be saved in formats that support embedded graphics.
+//	if (!ignoreTemporary && [textStorage containsAttachments]) {
+//	    [outArray setArray:[NSArray arrayWithObjects:(NSString *)kUTTypeRTFD, (NSString *)kUTTypeWebArchive, nil]];
+//	}
+//    }
+//    return outArray;
+//}
+//
+//- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation {
+//	return [self writableTypesForSaveOperation:saveOperation ignoreTemporaryState:NO];
+//}
 
 - (NSString *)fileNameExtensionForType:(NSString *)inTypeName saveOperation:(NSSaveOperationType)inSaveOperation {
     /* We use kUTTypeText as our plain text type.  However, kUTTypeText is really a class of types and therefore contains no preferred extension.  Therefore we must specify a preferred extension, that of kUTTypePlainText. */
@@ -895,12 +895,12 @@ In addition we overwrite this method as a way to tell that the document has been
 //    }];
 //    
 //}
-
-/* Indicate the types we know we can save safely asynchronously.
-*/
-- (BOOL)canAsynchronouslyWriteToURL:(NSURL *)url ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation {
-    return [[self class] canConcurrentlyReadDocumentsOfType:typeName];
-}
+//
+///* Indicate the types we know we can save safely asynchronously.
+//*/
+//- (BOOL)canAsynchronouslyWriteToURL:(NSURL *)url ofType:(NSString *)typeName forSaveOperation:(NSSaveOperationType)saveOperation {
+//    return [[self class] canConcurrentlyReadDocumentsOfType:typeName];
+//}
 
 //- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode {
 //    switch (errorCode) {
@@ -1066,7 +1066,7 @@ In addition we overwrite this method as a way to tell that the document has been
 //    inDuplicate = NO;
 //    return result;
 //}
-
+//
 - (void)document:(NSDocument *)ignored didSave:(BOOL)didSave block:(void (^)(BOOL))block {
     block(didSave);
     Block_release(block);

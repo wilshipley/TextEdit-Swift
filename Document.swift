@@ -14,66 +14,42 @@ public extension Document {
     // MARK: NSDocument
     //
     
-    override public func updateChangeCount(change: NSDocumentChangeType) {
-
-        transient = false // when a document is changed, it ceases to be transient.
-      
-        super.updateChangeCount(change)
-        
-        guard change == .ChangeDone || change == .ChangeRedone else {
-            return
-        }
-        
-        if fileURL == nil {
-            // If we don't have a file URL, we can change our backing store type without consulting the user.
-            // NSDocument will update the extension of our autosaving location.
-            // If we don't do this, we won't be able to store images in autosaved untitled documents.
-            if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
-                fileType = textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
-            }
-            return
-        }
-        
-        do {
-            try checkAutosavingSafetyAfterChange()
-        }
-        catch let error as NSError {
-            if windowForSheet != nil {
-                performActivityWithSynchronousWaiting(true) { activityCompletionHandler in
-                    
-                    Document.recoverBlock = { didRecover in
-                        if !didRecover {
-                            self.undoManager?.undo()
-                        }
-                        activityCompletionHandler()
-                    }
-                    
-                    self.presentError(error,
-                        modalForWindow: self.windowForSheet!,
-                        delegate: self,
-                        didPresentSelector: "didPresentErrorWithRecovery:contextInfo:",
-                        contextInfo: nil
-                    )
-                }
-            } else {
-                if !presentError(error) {
-                    undoManager?.undo()
-                }
-            }
-        }
-    }
-    // FIXME: make this NOT static when this file is no longer a temporary "exension" to Document
-    private static var recoverBlock: ((Bool) -> Void)? = nil
-    public func didPresentErrorWithRecovery(didRecover: Bool, contextInfo: UnsafeMutablePointer<Void>) {
-        Document.recoverBlock?(didRecover)
-        Document.recoverBlock = nil
+    // load/save
+    override class func autosavesInPlace() -> Bool { return true }
+    override class func canConcurrentlyReadDocumentsOfType(typeName: String) -> Bool {
+        return !NSWorkspace.sharedWorkspace().type(typeName, conformsToType: kUTTypeHTML as String)
+            && !NSWorkspace.sharedWorkspace().type(typeName, conformsToType: kUTTypeWebArchive as String)
     }
 
+    override public var autosavingFileType: String? {
+        if inDuplicate && (fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!)) {
+            return textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
+        } else {
+            return super.autosavingFileType
+        }
+    }
 
+    override public func canAsynchronouslyWriteToURL(url: NSURL, ofType typeName: String, forSaveOperation saveOperation: NSSaveOperationType) -> Bool {
+        // Indicate the types we know we can save safely asynchronously.
+        return Document.canConcurrentlyReadDocumentsOfType(typeName)
+    }
     
-    // reading and writing to disk
-    override public var shouldRunSavePanelWithAccessoryView: Bool { return isRichText } // For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup.
-
+    override public func checkAutosavingSafety() throws {
+        try super.checkAutosavingSafety()
+        guard fileURL != nil else {
+            return
+        }
+        
+        // If the document is converted or lossy but can't be saved in its file type, we will need to save it in a different location or duplicate it anyway.  Therefore, we should tell the user that a writable type is required instead.
+        if fileType == nil || !(writableTypesForSaveOperation(.SaveAsOperation, ignoreTemporaryState: true) as! [String]).contains(fileType!) {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
+        } else if converted {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorConvertedDocument)
+        } else if lossy {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorLossyDocument)
+        }
+    }
+    
     override public func fileWrapperOfType(typeName: String) throws -> NSFileWrapper { // Returns an object that represents the document to be written to file.
         
         var documentAttributes: [String : AnyObject] = [
@@ -91,7 +67,7 @@ public extension Document {
         if viewSize != .zero {
             documentAttributes[NSViewSizeDocumentAttribute] = NSValue(size: viewSize)
         }
-
+        
         
         // TextEdit knows how to save all these types, including their super-types. It does not know how to save any of their potential subtypes. Hence, the conformance check is the reverse of the usual pattern.
         let documentType: String = {
@@ -110,10 +86,10 @@ public extension Document {
             else if workspace.type(kUTTypeWebArchive as String, conformsToType: typeName) { return NSWebArchiveTextDocumentType }
             else {
                 NSException(name: NSInvalidArgumentException, reason: typeName + " is not a recognized document type.", userInfo: nil).raise()
-                return NSPlainTextDocumentType // notreached
+                return NSPlainTextDocumentType // notreached, shutting up compiler
             }
         }()
-
+        
         documentAttributes[NSDocumentTypeDocumentAttribute] = documentType
         if hasMultiplePages && scaleFactor != 1.0 {
             documentAttributes[NSViewZoomDocumentAttribute] = NSNumber(double: Double(scaleFactor) * 100.0)
@@ -158,12 +134,12 @@ public extension Document {
         default:
             break
         }
-
+        
         // Set the text layout orientation for each page
         documentAttributes[NSTextLayoutSectionsAttribute] = (windowControllers.first as? DocumentWindowController)?.layoutOrientationSections()
         
         // Set the document properties, generically, going through key value coding
-        self.dynamicType.documentPropertyToAttributeNameMappings.forEach { (property, attributeName) in
+        Document.documentPropertyToAttributeNameMappings.forEach { (property, attributeName) in
             if let value = valueForKey(property) {
                 switch value {
                 case let array as Array<AnyObject>:
@@ -186,7 +162,7 @@ public extension Document {
         if documentType == NSRTFDTextDocumentType
             || (documentType == NSPlainTextDocumentType && !openedIgnoringRichText) {	// We obtain a file wrapper from the text storage for RTFD (to produce a directory), or for true plain-text documents (to write out encoding in extended attributes)
                 fileWrapper = try textStorage.fileWrapperFromRange(range, documentAttributes: documentAttributes) // returns NSFileWrapper
-
+                
         } else {
             let data = try textStorage.dataFromRange(range, documentAttributes: documentAttributes) // returns NSData
             fileWrapper = NSFileWrapper(regularFileWithContents: data)
@@ -198,45 +174,6 @@ public extension Document {
         }
         
         return fileWrapper
-    }
-
-    override public func saveToURL(url: NSURL, ofType typeName: String, forSaveOperation saveOperation: NSSaveOperationType, completionHandler: (NSError?) -> Void) {
-        /* When we save, we send a notification so that views that are currently coalescing undo actions can break that. This is done for two reasons, one technical and the other HI oriented.
-        
-        Firstly, since the dirty state tracking is based on undo, for a coalesced set of changes that span over a save operation, the changes that occur between the save and the next time the undo coalescing stops will not mark the document as dirty. Secondly, allowing the user to undo back to the precise point of a save is good UI.
-        
-        In addition we overwrite this method as a way to tell that the document has been saved successfully. If so, we set the save time parameters in the document.
-        */
-
-        windowControllers.forEach {
-            // Note that we do the breakUndoCoalescing call even during autosave, which means the user's undo of long typing will take them back to the last spot an autosave occured. This might seem confusing, and a more elaborate solution may be possible (cause an autosave without having to breakUndoCoalescing), but since this change is coming late in Leopard, we decided to go with the lower risk fix.
-            ($0 as? DocumentWindowController)?.breakUndoCoalescing()
-        }
-        
-        performAsynchronousFileAccessUsingBlock { fileAccessCompletionHandler in
-            self.currentSaveOperation = saveOperation
-            super.saveToURL(url, ofType: typeName, forSaveOperation: saveOperation) { error in
-                self.encodingForSaving = UInt(NoStringEncoding) // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
-                fileAccessCompletionHandler()
-                completionHandler(error)
-            }
-        }
-    }
-
-    override public func checkAutosavingSafety() throws {
-        try super.checkAutosavingSafety()
-        guard fileURL != nil else {
-            return
-        }
-        
-        // If the document is converted or lossy but can't be saved in its file type, we will need to save it in a different location or duplicate it anyway.  Therefore, we should tell the user that a writable type is required instead.
-        if fileType == nil || !(writableTypesForSaveOperation(.SaveAsOperation, ignoreTemporaryState: true) as! [String]).contains(fileType!) {
-           throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
-        } else if converted {
-            throw errorInTextEditDomainWithCode(TextEditSaveErrorConvertedDocument)
-        } else if lossy {
-            throw errorInTextEditDomainWithCode(TextEditSaveErrorLossyDocument)
-        }
     }
     
     override public func prepareSavePanel(savePanel: NSSavePanel) -> Bool {
@@ -300,17 +237,93 @@ public extension Document {
         }
         encodingPopup?.action = "encodingPopupChanged:"
         encodingPopup?.target = self
-    
+        
         return true
     }
-
-    override public var autosavingFileType: String? {
-        if inDuplicate && (fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!)) {
-            return textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
-        } else {
-            return super.autosavingFileType
+    
+    override public func saveToURL(url: NSURL, ofType typeName: String, forSaveOperation saveOperation: NSSaveOperationType, completionHandler: (NSError?) -> Void) {
+        /* When we save, we send a notification so that views that are currently coalescing undo actions can break that. This is done for two reasons, one technical and the other HI oriented.
+        
+        Firstly, since the dirty state tracking is based on undo, for a coalesced set of changes that span over a save operation, the changes that occur between the save and the next time the undo coalescing stops will not mark the document as dirty. Secondly, allowing the user to undo back to the precise point of a save is good UI.
+        
+        In addition we overwrite this method as a way to tell that the document has been saved successfully. If so, we set the save time parameters in the document.
+        */
+        
+        windowControllers.forEach {
+            // Note that we do the breakUndoCoalescing call even during autosave, which means the user's undo of long typing will take them back to the last spot an autosave occured. This might seem confusing, and a more elaborate solution may be possible (cause an autosave without having to breakUndoCoalescing), but since this change is coming late in Leopard, we decided to go with the lower risk fix.
+            ($0 as? DocumentWindowController)?.breakUndoCoalescing()
+        }
+        
+        performAsynchronousFileAccessUsingBlock { fileAccessCompletionHandler in
+            self.currentSaveOperation = saveOperation
+            super.saveToURL(url, ofType: typeName, forSaveOperation: saveOperation) { error in
+                self.encodingForSaving = UInt(NoStringEncoding) // This is set during prepareSavePanel:, but should be cleared for future save operation without save panel
+                fileAccessCompletionHandler()
+                completionHandler(error)
+            }
         }
     }
+    
+    override public var shouldRunSavePanelWithAccessoryView: Bool { return isRichText } // For plain-text documents, we add our own accessory view for selecting encodings. The plain text case does not require a format popup.
+    
+    override public func writableTypesForSaveOperation(saveOperation: NSSaveOperationType) -> [String] {
+        return writableTypesForSaveOperation(saveOperation, ignoreTemporaryState: false)
+    }
+
+    
+    // undo
+    override public func updateChangeCount(change: NSDocumentChangeType) {
+
+        transient = false // when a document is changed, it ceases to be transient.
+      
+        super.updateChangeCount(change)
+        
+        guard change == .ChangeDone || change == .ChangeRedone else {
+            return
+        }
+        
+        if fileURL == nil {
+            // If we don't have a file URL, we can change our backing store type without consulting the user.
+            // NSDocument will update the extension of our autosaving location.
+            // If we don't do this, we won't be able to store images in autosaved untitled documents.
+            if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
+                fileType = textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
+            }
+            return
+        }
+        
+        do {
+            try checkAutosavingSafetyAfterChange()
+        }
+        catch let error as NSError {
+            if windowForSheet != nil {
+                performActivityWithSynchronousWaiting(true) { activityCompletionHandler in
+                    
+                    Document.recoverBlock = { didRecover in
+                        if !didRecover {
+                            self.undoManager?.undo()
+                        }
+                        activityCompletionHandler()
+                    }
+                    
+                    self.presentError(error,
+                        modalForWindow: self.windowForSheet!,
+                        delegate: self,
+                        didPresentSelector: "didPresentErrorWithRecovery:contextInfo:",
+                        contextInfo: nil
+                    )
+                }
+            } else {
+                if !presentError(error) {
+                    undoManager?.undo()
+                }
+            }
+        }
+    }
+
+    
+    // more
+    
     // When we duplicate a document, we need to temporarily return the autosaving file type for the resultant document.  Unfortunately, the only way to do this from a document subclass appears to be to use a boolean indicator.
     override public func duplicate() throws -> NSDocument {
         inDuplicate = true
@@ -320,8 +333,201 @@ public extension Document {
 
     
     //
+    // MARK: NSObject (NSErrorRecoveryAttempting)
+    //
+//    override public func attemptRecoveryFromError(error: NSError, optionIndex recoveryOptionIndex: Int, delegate: AnyObject?, didRecoverSelector: Selector, contextInfo: UnsafeMutablePointer<Void>) {
+//
+//        var didRecover = false
+//        
+//        if error.domain == TextEditErrorDomain {
+//
+//            switch error.code {
+//                
+//            case TextEditSaveErrorWritableTypeRequired, TextEditSaveErrorConvertedDocument, TextEditSaveErrorLossyDocument:
+//
+//                // duplicate button - index 0 for lossy document errors and index 2 otherwise
+//                if ((error.code == TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 0))
+//                    || ((error.code != TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 2)) {
+//                        do {
+//                            try duplicate()
+//                        }
+//                        catch let duplicateError as NSError {
+//                            if windowForSheet != nil {
+//                                // [delegate retain];
+//                                presentError(duplicateError,
+//                                    modalForWindow: windowForSheet!,
+//                                    delegate: self,
+//                                    didPresentSelector: "didPresentErrorWithRecovery:block:",
+//                                    contextInfo: nil
+//                                    // Block_copy(^(BOOL didRecover) {
+//                                    // [delegate release];
+//                                    ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, NO, contextInfo);
+//                                )
+//                                return
+//                            } else {
+//                                presentError(duplicateError)
+//                            }
+//                        }
+//
+//                        // save / overwrite button - index 2 for lossy document errors and 0 otherwise
+//                } else if ((error.code == TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 2))
+//                    || ((error.code != TextEditSaveErrorLossyDocument) && (recoveryOptionIndex == 0)) {
+//                        
+//                        if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
+//                            fileType = textStorage.containsAttachments ? kUTTypeRTFD as String : kUTTypeRTF as String
+//                        }
+//                        converted = false
+//                        lossy = false
+//                        didRecover = true
+//                }
+//
+//            case TextEditSaveErrorEncodingInapplicable:
+//                if recoveryOptionIndex == 0 { // OK button
+//                    // [delegate retain];
+//                    continueActivityUsingBlock {
+//                        self.runModalSavePanelForSaveOperation(.SaveOperation,
+//                            delegate: self,
+//                            didSaveSelector: "document:didSave:block:",
+//                            contextInfo: nil
+//                            // Block_copy(^(BOOL didSave) {
+//                            // [delegate release];
+//                            ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, didSave, contextInfo);
+//                        )
+//                    }
+//                    return
+//                }
+//                
+//            default:
+//                return
+//            }
+//        }
+//        
+//        // call the delegate's didRecoverSelector
+//        ((void (*)(id, SEL, BOOL, void *))objc_msgSend)(delegate, didRecoverSelector, didRecover, contextInfo);
+//    }
+
+    
+    // FIXME: move this
+    private static var recoverBlock: ((Bool) -> Void)? = nil
+    public func didPresentErrorWithRecovery(didRecover: Bool, contextInfo: UnsafeMutablePointer<Void>) {
+        Document.recoverBlock?(didRecover)
+        Document.recoverBlock = nil
+    }
+    // FIXME: move this
+//    private static var didSaveBlock: ((Bool) -> Void)? = nil
+//    public func document(document: NSDocument, didSave: Bool, contextInfo: UnsafeMutablePointer<Void>) {
+//        Document.didSaveBlock?(didSave)
+//        Document.didSaveBlock = nil
+//    }
+
+    
+    //
     // MARK: private methods
     //
+    internal class func isRichTextType(typeName: String) -> Bool {
+        // We map all plain text documents to public.text.  Therefore a document is rich iff its type is not public.text.
+        return typeName != (kUTTypeText as String)
+    }
+    
+    func checkAutosavingSafetyAfterChange() throws {
+        guard fileURL != nil else { // if the document isn't saved, don't complain about limitations of its supposed backing store.
+            return
+        }
+        
+        if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
+            throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
+        } else if !isRichText {
+            if encoding != UInt(NoStringEncoding) && !textStorage.string.canBeConvertedToEncoding(encoding) {
+                throw errorInTextEditDomainWithCode(TextEditSaveErrorEncodingInapplicable)
+            }
+        }
+    }
+
+    func errorInTextEditDomainWithCode(errorCode: Int) -> NSError {
+        
+        switch (errorCode) {
+        case TextEditSaveErrorWritableTypeRequired:
+            // the document can't be saved in its original format, either because TextEdit cannot write to the format, or TextEdit cannot write documents containing attachments to the format.
+            let description, recoverySuggestion: String
+            if textStorage.containsAttachments {
+                description = NSLocalizedString("Convert this document to RTFD format?",
+                    comment: "Title of alert panel prompting the user to convert to RTFD.")
+                recoverySuggestion = NSLocalizedString("Documents with graphics and attachments will be saved using RTFD (RTF with graphics) format. RTFD documents are not compatible with some applications. Convert anyway?",
+                    comment: "Contents of alert panel prompting the user to convert to RTFD.")
+            } else {
+                description = NSLocalizedString("Convert this document to RTF format?",
+                    comment: "Title of alert panel prompting the user to convert to RTF.")
+                recoverySuggestion = NSLocalizedString("This document must be converted to RTF before it can be modified.",
+                    comment: "Contents of alert panel prompting the user to convert to RTF.")
+            }
+            
+            return NSError(domain: TextEditErrorDomain, code: errorCode,
+                userInfo: [
+                    NSLocalizedDescriptionKey: description,
+                    NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
+                    NSLocalizedRecoveryOptionsErrorKey: [
+                        NSLocalizedString("Convert", comment: "Button choice that allows the user to convert the document."),
+                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
+                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document.")
+                    ],
+                    NSRecoveryAttempterErrorKey: self
+                ]
+            )
+            
+        case TextEditSaveErrorConvertedDocument:
+            let newFormatName = textStorage.containsAttachments
+                ? NSLocalizedString("rich text with graphics (RTFD)", comment: "Rich text with graphics file format name, displayed in alert")
+                : NSLocalizedString("rich text", comment: "Rich text file format name, displayed in alert")
+            
+            return NSError(domain: TextEditErrorDomain, code: errorCode,
+                userInfo: [
+                    NSLocalizedDescriptionKey: NSLocalizedString("Are you sure you want to edit this document?",
+                        comment: "Title of alert panel asking the user whether he wants to edit a converted document."),
+                    NSLocalizedRecoverySuggestionErrorKey: NSString(format: NSLocalizedString("This document was converted from a format that TextEdit cannot save. It will be saved in %@ format.", comment: "Contents of alert panel informing user that the document is converted and cannot be written in its original format."), newFormatName),
+                    NSLocalizedRecoveryOptionsErrorKey: [
+                        NSLocalizedString("Edit", comment: "Button choice that allows the user to save the document."),
+                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
+                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document.")
+                    ],
+                    NSRecoveryAttempterErrorKey: self,
+                ]
+            )
+            
+        case TextEditSaveErrorLossyDocument:
+            return NSError(domain: TextEditErrorDomain, code: errorCode,
+                userInfo: [
+                    NSLocalizedDescriptionKey: NSLocalizedString("Are you sure you want to modify the document in place?", comment: "Title of alert panel which brings up a warning about saving over the same document"),
+                    NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString("Modifying the document in place might cause you to lose some of the original formatting.  Would you like to duplicate the document first?", comment: "Contents of alert panel informing user that they need to supply a new file name because the save might be lossy"),
+                    NSLocalizedRecoveryOptionsErrorKey: [
+                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document."),
+                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
+                        NSLocalizedString("Overwrite", comment: "Button choice allowing user to overwrite the document.")
+                    ],
+                    NSRecoveryAttempterErrorKey: self
+                ]
+            )
+            
+        case TextEditSaveErrorEncodingInapplicable:
+            let bestGuessEncoding = (encodingForSaving != UInt(NoStringEncoding)) ? encodingForSaving : encoding
+            
+            return NSError(domain: TextEditErrorDomain, code: errorCode,
+                userInfo: [
+                    NSLocalizedDescriptionKey: NSString(format: NSLocalizedString("This document can no longer be saved using its original %@ encoding.", comment: "Title of alert panel informing user that the file's string encoding needs to be changed."), NSString.localizedNameOfStringEncoding(bestGuessEncoding)),
+                    NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString("Please choose another encoding (such as UTF-8).", comment: "Subtitle of alert panel informing user that the file's string encoding needs to be changed"),
+                    NSLocalizedFailureReasonErrorKey: NSLocalizedString("The specified text encoding isn\\U2019t applicable.", comment: "Failure reason stating that the text encoding is not applicable."),
+                    NSLocalizedRecoveryOptionsErrorKey: [
+                        NSLocalizedString("OK", comment: "OK"),
+                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel.")
+                    ],
+                    NSRecoveryAttempterErrorKey: self
+                ]
+            )
+            
+        default:
+            return NSError(domain: TextEditErrorDomain, code: errorCode, userInfo: nil) // shouldn't happen
+        }
+    }
+    
     func readFromURL(url: NSURL, ofType typeName: String, encoding desiredEncoding: NSStringEncoding, ignoreRTF: Bool, ignoreHTML: Bool) throws {
         var options = [String : AnyObject]()
         
@@ -432,7 +638,7 @@ public extension Document {
         if let documentViewSize = documentViewSize {
             viewSize = documentViewSize
             if let documentPaperSize = documentPaperSize { paperSize = documentPaperSize }
-
+            
             // no ViewSize...
         } else if var documentPaperSize = documentPaperSize { // see if PaperSize should be used as ViewSize; if so, we also have some tweaking to do on it
             
@@ -447,7 +653,7 @@ public extension Document {
                 paperSize = documentPaperSize
             }
         }
-
+        
         hyphenationFactor =  (documentAttributes?[NSHyphenationFactorDocumentAttribute] as? NSNumber)?.floatValue ?? 0
         backgroundColor = (documentAttributes?[NSBackgroundColorDocumentAttribute] as? NSColor) ?? NSColor.whiteColor()
         
@@ -463,106 +669,6 @@ public extension Document {
         undoManager?.enableUndoRegistration()
     }
     
-    func errorInTextEditDomainWithCode(errorCode: Int) -> NSError {
-
-        switch (errorCode) {
-        case TextEditSaveErrorWritableTypeRequired:
-            // the document can't be saved in its original format, either because TextEdit cannot write to the format, or TextEdit cannot write documents containing attachments to the format.
-            let description, recoverySuggestion: String
-            if textStorage.containsAttachments {
-                description = NSLocalizedString("Convert this document to RTFD format?",
-                    comment: "Title of alert panel prompting the user to convert to RTFD.")
-                recoverySuggestion = NSLocalizedString("Documents with graphics and attachments will be saved using RTFD (RTF with graphics) format. RTFD documents are not compatible with some applications. Convert anyway?",
-                    comment: "Contents of alert panel prompting the user to convert to RTFD.")
-            } else {
-                description = NSLocalizedString("Convert this document to RTF format?",
-                    comment: "Title of alert panel prompting the user to convert to RTF.")
-                recoverySuggestion = NSLocalizedString("This document must be converted to RTF before it can be modified.",
-                    comment: "Contents of alert panel prompting the user to convert to RTF.")
-            }
-            
-            return NSError(domain: TextEditErrorDomain, code: errorCode,
-                userInfo: [
-                    NSLocalizedDescriptionKey: description,
-                    NSLocalizedRecoverySuggestionErrorKey: recoverySuggestion,
-                    NSLocalizedRecoveryOptionsErrorKey: [
-                        NSLocalizedString("Convert", comment: "Button choice that allows the user to convert the document."),
-                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
-                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document.")
-                    ],
-                    NSRecoveryAttempterErrorKey: self
-                ]
-            )
-
-        case TextEditSaveErrorConvertedDocument:
-            let newFormatName = textStorage.containsAttachments
-                ? NSLocalizedString("rich text with graphics (RTFD)", comment: "Rich text with graphics file format name, displayed in alert")
-                : NSLocalizedString("rich text", comment: "Rich text file format name, displayed in alert")
-
-            return NSError(domain: TextEditErrorDomain, code: errorCode,
-                userInfo: [
-                    NSLocalizedDescriptionKey: NSLocalizedString("Are you sure you want to edit this document?",
-                        comment: "Title of alert panel asking the user whether he wants to edit a converted document."),
-                    NSLocalizedRecoverySuggestionErrorKey: NSString(format: NSLocalizedString("This document was converted from a format that TextEdit cannot save. It will be saved in %@ format.", comment: "Contents of alert panel informing user that the document is converted and cannot be written in its original format."), newFormatName),
-                    NSLocalizedRecoveryOptionsErrorKey: [
-                        NSLocalizedString("Edit", comment: "Button choice that allows the user to save the document."),
-                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
-                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document.")
-                    ],
-                    NSRecoveryAttempterErrorKey: self,
-                ]
-            )
-
-        case TextEditSaveErrorLossyDocument:
-            return NSError(domain: TextEditErrorDomain, code: errorCode,
-                userInfo: [
-                    NSLocalizedDescriptionKey: NSLocalizedString("Are you sure you want to modify the document in place?", comment: "Title of alert panel which brings up a warning about saving over the same document"),
-                    NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString("Modifying the document in place might cause you to lose some of the original formatting.  Would you like to duplicate the document first?", comment: "Contents of alert panel informing user that they need to supply a new file name because the save might be lossy"),
-                    NSLocalizedRecoveryOptionsErrorKey: [
-                        NSLocalizedString("Duplicate", comment: "Button choice that allows the user to duplicate the document."),
-                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel."),
-                        NSLocalizedString("Overwrite", comment: "Button choice allowing user to overwrite the document.")
-                    ],
-                    NSRecoveryAttempterErrorKey: self
-                ]
-            )
-
-        case TextEditSaveErrorEncodingInapplicable:
-            let bestGuessEncoding = (encodingForSaving != UInt(NoStringEncoding)) ? encodingForSaving : encoding
-            
-            return NSError(domain: TextEditErrorDomain, code: errorCode,
-                userInfo: [
-                    NSLocalizedDescriptionKey: NSString(format: NSLocalizedString("This document can no longer be saved using its original %@ encoding.", comment: "Title of alert panel informing user that the file's string encoding needs to be changed."), NSString.localizedNameOfStringEncoding(bestGuessEncoding)),
-                    NSLocalizedRecoverySuggestionErrorKey: NSLocalizedString("Please choose another encoding (such as UTF-8).", comment: "Subtitle of alert panel informing user that the file's string encoding needs to be changed"),
-                    NSLocalizedFailureReasonErrorKey: NSLocalizedString("The specified text encoding isn\\U2019t applicable.", comment: "Failure reason stating that the text encoding is not applicable."),
-                    NSLocalizedRecoveryOptionsErrorKey: [
-                        NSLocalizedString("OK", comment: "OK"),
-                        NSLocalizedString("Cancel", comment: "Button choice that allows the user to cancel.")
-                    ],
-                    NSRecoveryAttempterErrorKey: self
-                ]
-            )
-
-        default:
-            return NSError(domain: TextEditErrorDomain, code: errorCode, userInfo: nil) // shouldn't happen
-        }
-    }
-
-    func checkAutosavingSafetyAfterChange() throws {
-        guard fileURL != nil else { // if the document isn't saved, don't complain about limitations of its supposed backing store.
-            return
-        }
-        
-        if fileType == nil || !writableTypesForSaveOperation(.SaveAsOperation).contains(fileType!) {
-            throw errorInTextEditDomainWithCode(TextEditSaveErrorWritableTypeRequired)
-        } else if !isRichText {
-            if encoding != UInt(NoStringEncoding) && !textStorage.string.canBeConvertedToEncoding(encoding) {
-                throw errorInTextEditDomainWithCode(TextEditSaveErrorEncodingInapplicable)
-            }
-        }
-    }
-
-    
     private class func readableTypeForType(type: String) -> String? {
         // There is a partial order on readableTypes given by UTTypeConformsTo. We linearly extend the partial order to a total order using <.
         // Therefore we can compute the ancestor with greatest level (furthest from root) by linear search in the resulting array.
@@ -570,18 +676,40 @@ public extension Document {
         // and we want to find the most specialized such type.
         return topologicallySortedReadableTypes.filter { UTTypeConformsTo(type, $0) }.first
     }
+    
     private static let topologicallySortedReadableTypes: [String] = Document.readableTypes().sort {
         if $0 == $1 || UTTypeConformsTo($1, $0) { return false }
         if UTTypeConformsTo($0, $1) { return true }
         return ObjectIdentifier($0) < ObjectIdentifier($1) // ensure sort is stable even for unrelated types
     }
     
-    
-    internal class func isRichTextType(typeName: String) -> Bool {
-        // We map all plain text documents to public.text.  Therefore a document is rich iff its type is not public.text.
-        return typeName != (kUTTypeText as String)
+    /* One of the determinants of whether a file is locked is whether its type is one of our writable types. However, the writable types are a function of whether the document contains attachments. But whether we are locked cannot be a function of whether the document contains attachments, because we won't be asked to redetermine autosaving safety after an undo operation resulting from a cancel, so the document would continue to appear locked if an image were dragged in and then cancel was pressed.  Therefore, we must use an "ignoreTemporary" boolean to treat RTF as temporarily writable despite the attachments.  That's fine since -checkAutosavingSafetyAfterChangeAndReturnError: will perform this check again with ignoreTemporary set to NO, and that method will be called when the operation is done and undone, so no inconsistency results.
+    */
+    public func writableTypesForSaveOperation(saveOperation: NSSaveOperationType, ignoreTemporaryState: Bool) -> [String] {
+        var writableTypes = Document.writableTypes()
+        
+        if saveOperation != .SaveAsOperation {
+            return writableTypes
+        }
+        
+        // Documents that contain attachments can only be saved in formats that support embedded graphics.
+        if !ignoreTemporaryState && textStorage.containsAttachments {
+            return [kUTTypeRTFD as String, kUTTypeWebArchive as String]
+        }
+        
+        // Rich-text documents cannot be saved as plain text.
+        if isRichText {
+            if writableTypes.contains(kUTTypeText as String) {
+                writableTypes.removeAtIndex(writableTypes.indexOf(kUTTypeText as String)!)
+            }
+            if writableTypes.contains(kUTTypePlainText as String) {
+                writableTypes.removeAtIndex(writableTypes.indexOf(kUTTypePlainText as String)!)
+            }
+        }
+        return writableTypes
     }
-    
+
+
     //
     // MARK: private properties
     //

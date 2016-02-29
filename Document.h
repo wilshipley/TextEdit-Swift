@@ -190,7 +190,7 @@
 @property BOOL inDuplicate;
 
 
-- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary;
+//- (NSArray *)writableTypesForSaveOperation:(NSSaveOperationType)saveOperation ignoreTemporaryState:(BOOL)ignoreTemporary;
 - (NSStringEncoding)suggestedDocumentEncoding;
 //- (NSError *)errorInTextEditDomainWithCode:(NSInteger)errorCode;
 
